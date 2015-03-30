@@ -60,6 +60,8 @@ let fail_typing_error err =
             pp_term te pp_context2 ctx
       | DomainFreeLambda lc ->
           fail lc "Cannot infer the type of domain-free lambda."
+      | MetaInKernel (lc,s) -> fail lc "Unexpected metavariable \"%a\" in kernel mode." pp_ident s
+      | InferSortMeta (lc,s) -> fail lc "TODO: implement type inference for sort meta (hit \"%a\")." pp_ident s
 
 let fail_dtree_error err =
   let open Dtree in

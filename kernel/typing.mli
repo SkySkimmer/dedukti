@@ -14,6 +14,8 @@ type typing_error =
   | ProductExpected of term*context*term
   | InexpectedKind of term*context
   | DomainFreeLambda of loc
+  | MetaInKernel of loc*ident
+  | InferSortMeta of loc*ident
 
 exception TypingError of typing_error
 
@@ -31,6 +33,9 @@ end
 type judgment = Context.t judgment0
 
 (** {2 Meta aware operations} *)
+
+type metainfo
+
 module type Meta = sig
   type t
   
@@ -39,9 +44,18 @@ module type Meta = sig
   val unify : Signature.t -> t -> term -> term -> t option
   
   val whnf : Signature.t -> t -> term -> term
+  
+  val unify_sort : Signature.t -> t -> term -> t option
+  val new_sort : t -> Context.t -> loc -> ident -> t*term
+  val new_meta : t -> Context.t -> loc -> ident -> term -> t*judgment
+  val get_meta : t -> term -> metainfo
+  
+  val apply : t -> term -> term
 end
 
 module KMeta : Meta
+
+module RMeta : Meta
 
 (** {2 Type Inference/Checking} *)
 
@@ -59,6 +73,8 @@ end
 module Refiner (M:Meta) : RefinerS with type meta_t = M.t
 
 module KRefine : RefinerS with type meta_t = KMeta.t
+
+module MetaRefine : RefinerS with type meta_t = RMeta.t
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of

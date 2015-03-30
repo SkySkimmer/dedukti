@@ -14,8 +14,9 @@ type token =
   | LEFTSQU
   | LEFTPAR
   | LEFTBRA
+  | QMARK       of loc
   | ID          of ( loc * ident )
-  | FID          of ( loc * ident ) 
+  | FID         of ( loc * ident ) 
   | FATARROW
   | EOF
   | DOT

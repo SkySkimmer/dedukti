@@ -20,7 +20,7 @@ let mk_prelude _ prelude_name =
   name := string_of_ident prelude_name
 
 let rec mk_term = function
-  | Kind | Type _ | DB _ -> ()
+  | Kind | Type _ | DB _ | Hole _ | Meta _ -> () (* Since we haven't computed metas are clean *)
   | Const (_,md,_) -> add_dep md
   | App (f,a,args) -> List.iter mk_term (f::a::args)
   | Lam (_,_,None,te) -> mk_term te

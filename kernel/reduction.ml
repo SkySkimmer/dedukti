@@ -64,6 +64,8 @@ let rec beta_reduce : state -> state = function
     | { term=Kind }
     | { term=Const _ }
     | { term=Pi _ }
+    | { term=Hole _ }
+    | { term=Meta _ }
     | { term=Lam _; stack=[] } as config -> config
     | { ctx={ LList.len=k }; term=DB (_,_,n) } as config when (n>=k) -> config
     (* DeBruijn index: environment lookup *)
@@ -211,10 +213,11 @@ and whnf sg term = term_of_state ( reduce sg { ctx=LList.nil; term; stack=[] } )
 and snf sg (t:term) : term =
   match whnf sg t with
     | Kind | Const _
-    | DB _ | Type _ as t' -> t'
+    | DB _ | Type _ | Hole _ as t' -> t'
     | App (f,a,lst)     -> mk_App (snf sg f) (snf sg a) (List.map (snf sg) lst)
     | Pi (_,x,a,b)        -> mk_Pi dloc x (snf sg a) (snf sg b)
     | Lam (_,x,a,b)       -> mk_Lam dloc x None (snf sg b)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (snf sg) ts)
 
 and are_convertible_lst sg : (term*term) list -> bool = function
   | [] -> true
@@ -240,7 +243,7 @@ and are_convertible_lst sg : (term*term) list -> bool = function
 (* Head Normal Form *)
 let rec hnf sg t =
   match whnf sg t with
-    | Kind | Const _ | DB _ | Type _ | Pi (_,_,_,_) | Lam (_,_,_,_) as t' -> t'
+    | Kind | Const _ | DB _ | Type _ | Pi (_,_,_,_) | Lam (_,_,_,_) | Hole _ | Meta _ as t' -> t'
     | App (f,a,lst) -> mk_App (hnf sg f) (hnf sg a) (List.map (hnf sg) lst)
 
 (* Convertibility Test *)
@@ -252,6 +255,8 @@ let rec state_one_step (sg:Signature.t) : state -> state option = function
     | { term=Type _ }
     | { term=Kind }
     | { term=Pi _ }
+    | { term=Hole _}
+    | { term=Meta _}
     | { term=Lam _; stack=[] } -> None
     | { ctx={ LList.len=k }; term=DB (_,_,n) } when (n>=k) -> None
     (* DeBruijn index: environment lookup *)

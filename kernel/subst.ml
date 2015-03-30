@@ -7,7 +7,8 @@ let rec shift_rec (r:int) (k:int) : term -> term = function
       mk_App (shift_rec r k f) (shift_rec r k a) (List.map (shift_rec r k) args )
   | Lam (_,x,_,f) -> mk_Lam dloc x None (shift_rec r (k+1) f)
   | Pi  (_,x,a,b) -> mk_Pi dloc x (shift_rec r k a) (shift_rec r (k+1) b)
-  | t -> t
+  | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (shift_rec r k) ts)
+  | Kind | Type _ | Const _ | Hole _ as t -> t
 
 let shift r t = shift_rec r 0 t
 
@@ -22,14 +23,15 @@ let unshift q te =
   | Lam (l,x,None,f) -> mk_Lam l x None (aux (k+1) f)
   | Lam (l,x,Some a,f) -> mk_Lam l x (Some (aux k a)) (aux (k+1) f)
   | Pi  (l,x,a,b) -> mk_Pi l x (aux k a) (aux (k+1) b)
-  | Type _ | Kind | Const _ as t -> t
+  | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (aux k) ts)
+  | Type _ | Kind | Const _ | Hole _ as t -> t
   in
     aux 0 te
 
 let rec psubst_l (args:(term Lazy.t) LList.t) (k:int) (t:term) : term =
   let nargs = args.LList.len in
   match t with
-    | Type _ | Kind | Const _ -> t
+    | Type _ | Kind | Const _ | Hole _ -> t
     | DB (_,x,n) when (n >= (k+nargs))  -> mk_DB dloc x (n-nargs)
     | DB (_,_,n) when (n < k)           -> t
     | DB (_,_,n) (* (k<=n<(k+nargs)) *) ->
@@ -41,6 +43,7 @@ let rec psubst_l (args:(term Lazy.t) LList.t) (k:int) (t:term) : term =
     | App (f,a,lst)                     ->
         mk_App (psubst_l args k f) (psubst_l args k a)
           (List.map (psubst_l args k) lst)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (psubst_l args k) ts)
 
 let subst (te:term) (u:term) =
   let rec  aux k = function
@@ -48,10 +51,11 @@ let subst (te:term) (u:term) =
         if n = k then shift k u
         else if n>k then mk_DB l x (n-1)
         else (*n<k*) t
-    | Type _ | Kind | Const _ as t -> t
+    | Type _ | Kind | Const _ | Hole _ as t -> t
     | Lam (_,x,_,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi dloc  x (aux k a) (aux(k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (aux k) ts)
   in aux 0 te
 
   
@@ -68,7 +72,7 @@ struct
 
   let apply (sigma:t) (te:term) (q:int) : term =
     let rec aux q = function
-      | Kind | Type _ | Const _ as t -> t
+      | Kind | Type _ | Const _ | Hole _ as t -> t
       | DB (_,_,k) as t when k<q -> t
       | DB (_,_,k) as t (*when k>=q*) ->
           begin
@@ -79,18 +83,20 @@ struct
       | Lam (l,x,Some ty,te) -> mk_Lam l x (Some (aux q ty)) (aux (q+1) te)
       | Lam (l,x,None,te) -> mk_Lam l x None (aux (q+1) te)
       | Pi (l,x,a,b) -> mk_Pi l x (aux q a) (aux (q+1) b)
+      | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (aux q) ts)
     in
       aux q te
 
   let occurs (n:int) (te:term) : bool =
     let rec aux q = function
-      | Kind | Type _ | Const _ -> false
+      | Kind | Type _ | Const _ | Hole _ -> false
       | DB (_,_,k) when k<q -> false
       | DB (_,_,k) (*when k>=q*) -> ( k-q == n )
       | App (f,a,args) -> List.exists (aux q) (f::a::args)
       | Lam (_,_,None,te) -> aux (q+1) te
       | Lam (_,_,Some ty,te) -> aux q ty || aux (q+1) te
       | Pi (_,_,a,b) -> aux q a || aux (q+1) b
+      | Meta (_,_,_,ts) -> List.exists (aux q) ts
     in aux 0 te
 
   let add (sigma:t) (x:ident) (n:int) (t:term) : t option =

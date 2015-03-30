@@ -20,12 +20,14 @@ let rec print_pterm out = function
   | PreApp (f,a,lst) -> print_list " " print_pterm_wp  out (f::a::lst)
   | PreLam (_,v,None,b) -> Format.fprintf out "%a => %a" print_ident v print_pterm b
   | PreLam (_,v,Some a,b) -> Format.fprintf out "%a:%a => %a" print_ident v print_pterm_wp a print_pterm b
-  | PrePi (_,o,a,b)    ->
+  | PrePi (_,o,a,b)    -> begin
       match o with
       | None   ->
           Format.fprintf out "%a -> %a" print_pterm_wp a print_pterm b
       | Some v ->
           Format.fprintf out "%a:%a -> %a" print_ident v print_pterm_wp a print_pterm b
+      end
+  | PreMeta (_,v) -> if ident_eq v empty then Format.fprintf out "?" else Format.fprintf out "?{\"%a\"}" print_ident v
 
 and print_pterm_wp out = function
   | PreType _ | PreId _ | PreQId _ as t  -> print_pterm out t
@@ -70,9 +72,13 @@ let rec print_term out = function
       Format.fprintf out "@[%a ->@ @[%a@]@]" print_term_wp a print_term b
   | Pi  (_,x,a,b)      ->
       Format.fprintf out "@[%a:%a ->@ @[%a@]@]" print_ident x print_term_wp a print_term b
+  | Hole (_,s) when ident_eq s empty -> Format.pp_print_string out "?"
+  | Hole (_,s)         -> Format.fprintf out "?{\"%a\"}" print_ident s
+  | Meta (_,s,n,ts) when ident_eq s empty -> Format.fprintf out "?_%i[%a]" n (print_list ";" print_term) ts
+  | Meta (_,s,n,ts)    -> Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" print_term) ts
 
 and print_term_wp out = function
-  | Kind | Type _ | DB _ | Const _ as t -> print_term out t
+  | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> print_term out t
   | t                                  -> Format.fprintf out "(%a)" print_term t
 
 let print_bv out (_,id,i) = print_db out (id,i)

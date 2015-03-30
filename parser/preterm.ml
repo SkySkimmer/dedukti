@@ -7,6 +7,7 @@ type preterm =
   | PreApp  of preterm * preterm * preterm list
   | PreLam  of loc * ident * preterm option * preterm
   | PrePi   of loc * ident option * preterm * preterm
+  | PreMeta of loc * ident
 
 type prepattern =
   | PCondition  of preterm
@@ -31,6 +32,7 @@ let rec pp_pterm out = function
       ( match o with
           | None   -> fprintf out "%a -> %a" pp_pterm_wp a pp_pterm b
           | Some v -> fprintf out "%a:%a -> %a" pp_ident v pp_pterm_wp a pp_pterm b )
+  | PreMeta (_,v) -> if ident_eq v empty then fprintf out "?" else fprintf out "?{\"%a\"}" pp_ident v
 
 and pp_pterm_wp out = function
   | PreType _ | PreId _ | PreQId _ as t  -> pp_pterm out t

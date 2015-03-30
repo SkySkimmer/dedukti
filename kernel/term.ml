@@ -8,13 +8,16 @@ type term =
   | DB    of loc*ident*int              (* deBruijn *)
   | Const of loc*ident*ident            (* Global variable *)
   | App   of term * term * term list    (* f a1 [ a2 ; ... an ] , f not an App *)
-  | Lam   of loc*ident*term option*term        (* Lambda abstraction *)
-  | Pi    of loc*ident*term*term (* Pi abstraction *)
+  | Lam   of loc*ident*term option*term (* Lambda abstraction *)
+  | Pi    of loc*ident*term*term        (* Pi abstraction *)
+  | Hole  of loc*ident                  (* Raw placeholder *)
+  | Meta  of loc*ident*int*term list    (* Metavariable *)
+
 
 type context = ( loc * ident * term ) list
 
 let rec get_loc = function
-  | Type l | DB (l,_,_) | Const (l,_,_) | Lam (l,_,_,_) | Pi (l,_,_,_)  -> l
+  | Type l | DB (l,_,_) | Const (l,_,_) | Lam (l,_,_,_) | Pi (l,_,_,_) | Hole (l,_) | Meta (l,_,_,_) -> l
   | Kind -> dloc
   | App (f,_,_) -> get_loc f
 
@@ -25,6 +28,8 @@ let mk_Const l m v      = Const (l,m,v)
 let mk_Lam l x a b      = Lam (l,x,a,b)
 let mk_Pi l x a b       = Pi (l,x,a,b)
 let mk_Arrow l a b      = Pi (l,qmark,a,b)
+let mk_Hole l v         = Hole (l,v)
+let mk_Meta l v n t     = Meta (l,v,n,t)
 
 let mk_App f a1 args =
   match f with
@@ -34,7 +39,7 @@ let mk_App f a1 args =
 let rec term_eq t1 t2 =
   (* t1 == t2 || *)
   match t1, t2 with
-    | Kind, Kind | Type _, Type _ -> true
+    | Kind, Kind | Type _, Type _ | Hole _, Hole _ -> true
     | DB (_,_,n), DB (_,_,n') -> n==n'
     | Const (_,m,v), Const (_,m',v') -> ident_eq v v' && ident_eq m m'
     | App (f,a,l), App (f',a',l') ->
@@ -42,6 +47,7 @@ let rec term_eq t1 t2 =
           with _ -> false )
     | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq b b'
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
+    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && List.for_all2 term_eq ts ts'
     | _, _  -> false
 
 let rec pp_term out = function
@@ -53,9 +59,13 @@ let rec pp_term out = function
   | Lam (_,x,None,f)   -> Printf.fprintf out "%a => %a" pp_ident x pp_term f
   | Lam (_,x,Some a,f) -> Printf.fprintf out "%a:%a => %a" pp_ident x pp_term_wp a pp_term f
   | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x pp_term_wp a pp_term b
+  | Hole (_,s) when ident_eq s empty -> Printf.fprintf out "?"
+  | Hole (_,s)         -> Printf.fprintf out "?{\"%a\"}" pp_ident s
+  | Meta (_,s,n,ts) when ident_eq s empty -> Printf.fprintf out "?_%i[%a]" n (pp_list ";" pp_term) ts
+  | Meta (_,s,n,ts)    -> Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" pp_term) ts
 
 and pp_term_wp out = function
-  | Kind | Type _ | DB _ | Const _ as t -> pp_term out t
+  | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> pp_term out t
   | t                                  -> Printf.fprintf out "(%a)" pp_term t
 
 let pp_context out ctx =

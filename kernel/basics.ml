@@ -23,6 +23,7 @@ end )
 let shash       = WS.create 251
 let hstring     = WS.merge shash
 let qmark       = hstring "?"
+let empty       = hstring ""
 
 (** {2 Lists with Length} *)
 

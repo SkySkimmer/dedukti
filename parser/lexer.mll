@@ -34,10 +34,11 @@ rule token = parse
   | '}'         { RIGHTBRA      }
   | '('         { LEFTPAR       }
   | ')'         { RIGHTPAR      }
-  | "-->"	{ LONGARROW     }
-  | "->"	{ ARROW         }
-  | "=>"	{ FATARROW      }
-  | ":="	{ DEF           }
+  | '?'         { QMARK ( get_loc lexbuf ) }
+  | "-->"       { LONGARROW     }
+  | "->"        { ARROW         }
+  | "=>"        { FATARROW      }
+  | ":="        { DEF           }
   | "_"         { UNDERSCORE ( get_loc lexbuf ) }
   | "Type"      { TYPE ( get_loc lexbuf )       }
   | "#NAME" space+ (modname as md)

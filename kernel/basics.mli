@@ -10,6 +10,7 @@ val print_ident : Format.formatter -> ident -> unit
 val hstring : string -> ident
 val ident_eq : ident -> ident -> bool
 val qmark : ident
+val empty : ident
 
 (** {2 Lists with Length} *)
 

@@ -9,6 +9,7 @@ type preterm =
   | PreApp  of preterm * preterm * preterm list
   | PreLam  of loc * ident * preterm option * preterm
   | PrePi   of loc * ident option * preterm * preterm
+  | PreMeta of loc * ident
 
 type prepattern =
   | PCondition  of preterm

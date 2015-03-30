@@ -27,7 +27,7 @@
 
     let rec preterm_loc = function
         | PreType l | PreId (l,_) | PreQId (l,_,_) | PreLam  (l,_,_,_)
-        | PrePi   (l,_,_,_) -> l
+        | PrePi   (l,_,_,_) | PreMeta (l,_) -> l
         | PreApp (f,_,_) -> preterm_loc f
 
     let mk_pre_from_list = function
@@ -51,6 +51,7 @@
 %token RIGHTBRA
 %token LEFTSQU
 %token RIGHTSQU
+%token <Basics.loc> QMARK
 %token <Basics.loc> WHNF
 %token <Basics.loc> HNF
 %token <Basics.loc> SNF
@@ -177,6 +178,10 @@ sterm           : QID
                 { $2 }
                 | TYPE
                 { PreType $1 }
+                | QMARK
+                { PreMeta ($1,empty) }
+                | QMARK LEFTBRA STRING RIGHTBRA
+                { PreMeta ($1, hstring $3) }
 
 term            : sterm+
                 { mk_pre_from_list $1 }

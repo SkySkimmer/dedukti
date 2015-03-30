@@ -12,8 +12,6 @@ let get_db_index ctx id =
     | _::lst -> aux (n+1) lst
   in aux 0 ctx
 
-let empty = hstring ""
-
 let rec t_of_pt (ctx:ident list) (pte:preterm) : term =
   match pte with
     | PreType l    -> mk_Type l
@@ -31,6 +29,7 @@ let rec t_of_pt (ctx:ident list) (pte:preterm) : term =
     | PreLam  (l,id,None,b) -> mk_Lam l id None (t_of_pt (id::ctx) b)
     | PreLam  (l,id,Some a,b) ->
         mk_Lam l id (Some (t_of_pt ctx a)) (t_of_pt (id::ctx) b)
+    | PreMeta (l,v) -> mk_Hole l v
 
 let scope_term (ctx:context) (pte:preterm) : term =
   t_of_pt (List.map (fun (_,x,_) -> x) ctx) pte
@@ -48,7 +47,7 @@ let p_of_pp (ctx:ident list) : prepattern -> pattern =
     | PPattern (l,Some md,id,args) -> Pattern (l,md,id,List.map (aux k ctx) args)
     | PLambda (l,x,p) -> Lambda (l,x,aux (k+1) (x::ctx) p)
     | PCondition pte -> Brackets (t_of_pt ctx pte)
-    | PJoker l -> Errors.fail l "Unimplemeted feature '_'."
+    | PJoker l -> Errors.fail l "Unimplemented feature '_'."
   in aux 0 ctx
 
 let scope_pattern (ctx:context) (pp:prepattern) : pattern =

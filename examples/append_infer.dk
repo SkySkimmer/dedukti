@@ -1,0 +1,19 @@
+#NAME append_infer.
+
+A  : Type.
+Nat: Type.
+Z  : Nat.
+S  : Nat -> Nat.
+
+plus: Nat -> Nat -> Nat.
+[m:Nat]       plus  Z    m --> m
+[n:Nat,m:Nat] plus (S n) m --> S (plus n m).
+
+Listn : Nat -> Type.
+nil   : Listn Z.
+cons  : n:_ -> A -> Listn n -> Listn (S n).
+
+append: n:_ -> Listn n -> m:_ -> Listn m -> Listn (plus n m).
+[n:Nat,l2:Listn n]      append _ nil _ l2 --> l2
+[n:Nat,l1:Listn n,m:Nat,l2:Listn m,a:A] 
+     append (S n) (cons n a l1) m l2 --> cons (plus n m) a (append n l1 m l2).

@@ -48,10 +48,10 @@ module KMeta : Meta
 module type RefinerS = sig
   type meta_t
 
-  val infer       : Signature.t -> meta_t -> Context.t -> term -> judgment
+  val infer       : Signature.t -> meta_t -> Context.t -> term -> meta_t*judgment
   (** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
 
-  val check       : Signature.t -> meta_t -> term -> judgment -> judgment
+  val check       : Signature.t -> meta_t -> term -> judgment -> meta_t*judgment
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
 end

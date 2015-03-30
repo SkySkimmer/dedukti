@@ -30,14 +30,35 @@ end
 
 type judgment = Context.t judgment0
 
+(** {2 Meta aware operations} *)
+module type Meta = sig
+  type t
+  
+  val empty : t
+  
+  val unify : Signature.t -> t -> term -> term -> t option
+  
+  val whnf : Signature.t -> t -> term -> term
+end
+
+module KMeta : Meta
+
 (** {2 Type Inference/Checking} *)
 
-val infer       : Signature.t -> Context.t -> term -> judgment
-(** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
+module type RefinerS = sig
+  type meta_t
 
-val check       : Signature.t -> term -> judgment -> judgment
-(** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
-* in the signature [sg] and context [ty.ctx]. *)
+  val infer       : Signature.t -> meta_t -> Context.t -> term -> judgment
+  (** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
+
+  val check       : Signature.t -> meta_t -> term -> judgment -> judgment
+  (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
+  * in the signature [sg] and context [ty.ctx]. *)
+end
+
+module Refiner (M:Meta) : RefinerS with type meta_t = M.t
+
+module KRefine : RefinerS with type meta_t = KMeta.t
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of
@@ -50,7 +71,7 @@ val check_rule  : Signature.t -> rule -> unit
 (** [check_rule sg ru] checks that a rule is well-typed. *)
 
 (** {2 Judgment Constructors (experimental)} *)
-
+(*
 type judgmentExn =
   | DistinctContexts
   | LambdaKind
@@ -71,3 +92,4 @@ val mk_App      : Signature.t -> judgment -> judgment -> judgment
 val mk_Pi       : judgment -> judgment
 val mk_Lam      : judgment -> judgment
 val mk_Conv     : Signature.t -> judgment -> judgment -> judgment
+*)

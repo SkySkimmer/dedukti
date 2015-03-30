@@ -62,75 +62,111 @@ end
 
 type judgment = Context.t judgment0
 
+(* ********************** METAS *)
+
+module type Meta = sig
+  type t
+  
+  val empty : t
+  
+  val unify : Signature.t -> t -> term -> term -> t option
+  
+  val whnf : Signature.t -> t -> term -> term
+end
+
+module KMeta : Meta with type t = unit = struct
+  type t = unit
+  
+  let empty = ()
+  
+  let unify sg _ t1 t2 = if Reduction.are_convertible sg t1 t2 then Some () else None
+  
+  let whnf sg _ = Reduction.whnf sg
+end
+
 (* ********************** TYPE CHECKING/INFERENCE FOR TERMS  *)
+module type RefinerS = sig
+  type meta_t
 
-let rec infer sg (ctx:Context.t) : term -> judgment = function
-  | Kind -> raise (TypingError KindIsNotTypable)
-  | Type l ->
-      { ctx=ctx; te=mk_Type l; ty= mk_Kind; }
-  | DB (l,x,n) ->
-      { ctx=ctx; te=mk_DB l x n; ty= Context.get_type ctx l x n }
-  | Const (l,md,id) ->
-      { ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
-  | App (f,a,args) ->
-      List.fold_left (check_app sg) (infer sg ctx f) (a::args)
-  | Pi (l,x,a,b) ->
-      let jdg_a = infer sg ctx a in
-      let jdg_b = infer sg (Context.add l x jdg_a) b in
-        ( match jdg_b.ty with
-            | Kind | Type _ as ty -> { ctx=ctx; te=mk_Pi l x a jdg_b.te; ty=ty }
-            | _ -> raise (TypingError
-                            (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
-        )
-  | Lam  (l,x,Some a,b) ->
-      let jdg_a = infer sg ctx a in
-      let jdg_b = infer sg (Context.add l x jdg_a) b in
-        ( match jdg_b.ty with
-            | Kind -> raise (TypingError
-                               (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
-            | _ -> { ctx=ctx; te=mk_Lam l x (Some a) jdg_b.te;
-                     ty=mk_Pi l x a jdg_b.ty }
-        )
-  | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l))
+  val infer : Signature.t -> meta_t -> Context.t -> term -> judgment
 
-and check sg (te:term) (jty:judgment) : judgment =
-  let ty_exp = jty.te in
-  let ctx = jty.ctx in
-    match te with
-      | Lam (l,x,None,u) ->
-          ( match Reduction.whnf sg jty.te with
-              | Pi (_,_,a,b) as pi ->
-                  let ctx2 = Context.unsafe_add ctx l x a in
-                  (* (x) might as well be Kind but here we do not care*)
-                  let _ = check sg u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } in
-                    { ctx=ctx; te=mk_Lam l x None u; ty=pi; }
+  val check : Signature.t -> meta_t -> term -> judgment -> judgment
+end
+
+module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
+  type meta_t = M.t
+
+  let rec infer sg (pb:M.t) (ctx:Context.t) : term -> judgment = function
+    | Kind -> raise (TypingError KindIsNotTypable)
+    | Type l ->
+        { ctx=ctx; te=mk_Type l; ty= mk_Kind; }
+    | DB (l,x,n) ->
+        { ctx=ctx; te=mk_DB l x n; ty= Context.get_type ctx l x n }
+    | Const (l,md,id) ->
+        { ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
+    | App (f,a,args) ->
+        List.fold_left (check_app sg pb) (infer sg pb ctx f) (a::args)
+    | Pi (l,x,a,b) ->
+        let jdg_a = infer sg pb ctx a in
+        let jdg_b = infer sg pb (Context.add l x jdg_a) b in
+          ( match jdg_b.ty with
+              | Kind | Type _ as ty -> { ctx=ctx; te=mk_Pi l x a jdg_b.te; ty=ty }
               | _ -> raise (TypingError
-                              (ProductExpected (te,Context.to_context jty.ctx,jty.te)))
+                              (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
           )
-      | _ ->
-        let jte = infer sg ctx te in
-          if Reduction.are_convertible sg jte.ty ty_exp then
-            { ctx=ctx; te=te; ty=ty_exp; }
-          else
-            raise (TypingError (
-              ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
+    | Lam  (l,x,Some a,b) ->
+        let jdg_a = infer sg pb ctx a in
+        let jdg_b = infer sg pb (Context.add l x jdg_a) b in
+          ( match jdg_b.ty with
+              | Kind -> raise (TypingError
+                                 (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
+              | _ -> { ctx=ctx; te=mk_Lam l x (Some a) jdg_b.te;
+                       ty=mk_Pi l x a jdg_b.ty }
+          )
+    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l))
 
-and check_app sg jdg_f arg =
-  match Reduction.whnf sg jdg_f.ty with
-    | Pi (_,_,a,b) ->
-        (* (x) might be Kind if CoC flag is on but it does not matter here *)
-        let _ = check sg arg { ctx=jdg_f.ctx; te=a; ty=mk_Type dloc (* (x) *); } in
-          { ctx=jdg_f.ctx; te=mk_App jdg_f.te arg []; ty=Subst.subst b arg; }
-    | _ ->
-        raise (TypingError (
-          ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
+  and check sg (pb:M.t) (te:term) (jty:judgment) : judgment =
+    let ty_exp = jty.te in
+    let ctx = jty.ctx in
+      match te with
+        | Lam (l,x,None,u) ->
+            ( match M.whnf sg pb jty.te with
+                | Pi (_,_,a,b) as pi ->
+                    let ctx2 = Context.unsafe_add ctx l x a in
+                    (* (x) might as well be Kind but here we do not care*)
+                    let _ = check sg pb u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } in
+                      { ctx=ctx; te=mk_Lam l x None u; ty=pi; }
+                | _ -> raise (TypingError
+                                (ProductExpected (te,Context.to_context jty.ctx,jty.te)))
+            )
+        | _ ->
+          let jte = infer sg pb ctx te in
+            match M.unify sg pb jte.ty ty_exp with
+              | Some _ -> { ctx=ctx; te=te; ty=ty_exp; }
+              | None -> raise (TypingError (
+                  ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
+
+  and check_app sg pb jdg_f arg =
+    match M.whnf sg pb jdg_f.ty with
+      | Pi (_,_,a,b) ->
+          (* (x) might be Kind if CoC flag is on but it does not matter here *)
+          let _ = check sg pb arg { ctx=jdg_f.ctx; te=a; ty=mk_Type dloc (* (x) *); } in
+            { ctx=jdg_f.ctx; te=mk_App jdg_f.te arg []; ty=Subst.subst b arg; }
+      | _ ->
+          raise (TypingError (
+            ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
+
+end
+
+module KRefine : RefinerS with type meta_t = KMeta.t
+ = Refiner(KMeta)
 
 let inference sg (te:term) : judgment =
-  infer sg Context.empty te
+  KRefine.infer sg () Context.empty te
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let jty = infer sg Context.empty ty_exp in
-    check sg te jty
+  let jty = KRefine.infer sg () Context.empty ty_exp in
+    KRefine.check sg () te jty
 
 (* **** PSEUDO UNIFICATION ********************** *)
 
@@ -213,11 +249,12 @@ let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:SS.t) (pat:pattern) : te
     let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
         (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args in
     (ty,si)
-  | Brackets t -> ( (infer sg ctx t).ty, SS.identity )
+  | Brackets t -> ( (KRefine.infer sg () ctx t).ty, SS.identity )
   | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
 
+
 and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : term*term*SS.t =
-  match Reduction.whnf sg ty_f with
+  match KMeta.whnf sg () ty_f with
     | Pi (_,_,a,b) ->
         let sigma = check_pattern sg ctx q a sigma0 arg in
         let arg' = pattern_to_term arg in
@@ -230,14 +267,14 @@ and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pa
   match pat with
   | Lambda (l,x,p) ->
       begin
-        match Reduction.whnf sg exp_ty with
+        match KMeta.whnf sg () exp_ty with
           | Pi (l,x,a,b) ->
               let ctx2 = Context.unsafe_add ctx l x a in
                 check_pattern sg ctx2 (q+1) b sigma0 p
           | exp_ty -> raise (TypingError ( ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty)))
       end
    | Brackets t ->
-     ( ignore (check sg t { ctx; te=exp_ty; ty=Term.mk_Type dloc; });
+     ( ignore (KRefine.check sg () t { ctx; te=exp_ty; ty=Term.mk_Type dloc; });
        SS.identity )
   | _ ->
       begin
@@ -252,18 +289,19 @@ and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pa
 
 let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
-    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (infer sg ctx ty) )
+    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg () ctx ty) )
       Context.empty (List.rev ctx) in
   let (ty_inf,sigma) = infer_pattern sg ctx 0 SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
-  let j_ri = infer sg ctx ri2 in
-  if not (Reduction.are_convertible sg ty_inf j_ri.ty) then
-    raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
+  let j_ri = KRefine.infer sg () ctx (SS.apply sigma ri2) in
+    match KMeta.unify sg () ty_inf j_ri.ty with
+      | Some () -> ()
+      | None -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 
 (* ********************** JUDGMENTS *)
-
+(*
 type judgmentExn =
   | DistinctContexts
   | LambdaKind
@@ -327,3 +365,4 @@ let mk_Conv sg a b =
           { ctx=a.ctx; te=a.te; ty=b.te }
         else raise (JudgmentExn ConvError)
     | _ -> raise (JudgmentExn ConvSort)
+*)

@@ -166,12 +166,12 @@ module RMeta : Meta = struct
   
   let set_meta pb n t = match List.partition (function | MetaDecl (_,m,_) | MetaSort (_,m) -> n=m
                                                        | MetaDef _ -> assert false) pb.decls with
-    | decls,[info] -> let (ctx,ty) = (match info with
+    | [info],decls -> let (ctx,ty) = (match info with
         | MetaDecl (ctx,_,ty) -> ctx,ty
         | MetaSort (ctx,_) -> ctx,mk_Kind (*probably false*)
         | _ -> assert false) in
       {cpt=pb.cpt; decls=decls; defs=(ctx,n,t,ty)::pb.defs;}
-    | _ -> raise Not_found
+    | _ -> assert false
   
   let unify sg ctx pb t1 t2 = let t1' = whnf sg pb t1 in let t2' = whnf sg pb t2 in
     if Reduction.are_convertible sg t1' t2'
@@ -324,11 +324,14 @@ module MetaRefine : RefinerS with type meta_t = RMeta.t
 let inference sg (te:term) : judgment =
   let pb,jdg0 = MetaRefine.infer sg RMeta.empty Context.empty te in
   let te0 = RMeta.apply pb jdg0.te in
-    snd (KRefine.infer sg KMeta.empty Context.empty (RMeta.apply pb te0))
+    snd (KRefine.infer sg KMeta.empty Context.empty te0)
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let pb,jty = KRefine.infer sg KMeta.empty Context.empty ty_exp in
-    snd (KRefine.check sg pb te jty)
+  let pb,jdg_ty = MetaRefine.infer sg RMeta.empty Context.empty ty_exp in
+  let pb2,jdg_te = MetaRefine.check sg pb te jdg_ty in
+  let ty_r = RMeta.apply pb2 jdg_ty.te in let te_r = RMeta.apply pb2 jdg_te.te in
+  let _,jty = KRefine.infer sg KMeta.empty Context.empty ty_r in
+    snd (KRefine.check sg KMeta.empty te_r jty)
 
 (* **** PSEUDO UNIFICATION ********************** *)
 

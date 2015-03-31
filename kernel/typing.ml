@@ -168,7 +168,7 @@ module RMeta : Meta = struct
                                                        | MetaDef _ -> assert false) pb.decls with
     | [info],decls -> let (ctx,ty) = (match info with
         | MetaDecl (ctx,_,ty) -> ctx,ty
-        | MetaSort (ctx,_) -> ctx,mk_Kind (*probably false*)
+        | MetaSort (ctx,_) -> ctx,mk_Kind (* Probably false. Can we set meta to Kind? *)
         | _ -> assert false) in
       {cpt=pb.cpt; decls=decls; defs=(ctx,n,t,ty)::pb.defs;}
     | _ -> assert false
@@ -235,16 +235,16 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
     | Lam  (l,x,Some a,b) ->
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match jdg_b.ty with
-              | Kind -> raise (TypingError
+          ( match M.unify sg pb3 jdg_b.ty (mk_Type dloc) with (* b_ty is either Type or Kind, but we don't want Kind *)
+              | None -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
-              | _ -> pb3,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
+              | Some pb4 -> pb4,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
     | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l))
     | Hole (lc,s) -> let pb2,mk = M.new_sort pb ctx lc s in
         M.new_meta pb2 ctx lc s mk
-    | Meta (lc,s,n,ts) as mv -> match M.get_meta pb mv with (* Check the indices once things happen *)
+    | Meta (lc,s,n,ts) as mv -> begin match M.get_meta pb mv with (* Check the indices once things happen *)
         | MetaDecl (ctx0,_,ty0) | MetaDef (ctx0,_,_,ty0) -> let len = List.length (Context.to_context ctx0) in
           let (pb1,_,ts1) = List.fold_left
               (fun (pb0,i,tjs) te_i -> let ty_i = Context.get_type ctx0 dloc empty i in
@@ -256,6 +256,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
           let ts2 = List.rev ts1 in
             pb1,{ctx=ctx; te=mk_Meta lc s n ts2; ty=subst_l ts1 0 ty0;}
         | MetaSort _ -> raise (TypingError (InferSortMeta (lc,s)))
+        end
     
 
   and check sg (pb:M.t) (te:term) (jty:judgment) : M.t*judgment =

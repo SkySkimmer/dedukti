@@ -42,7 +42,7 @@ let fail_typing_error err =
               "Error while typing '%a'%a.\nExpected: %a\nInferred: %a."
               pp_term te pp_context2 ctx pp_term exp pp_term inf
       | VariableNotFound (lc,x,n,ctx) ->
-          fail lc "The variable '%a' was not found in context:\n"
+          fail lc "The variable '%a' was not found in context %a.\n"
             pp_term (mk_DB lc x n) pp_context ctx
       | SortExpected (te,ctx,inf) ->
           let inf = if !errors_in_snf then Env.unsafe_snf inf else inf in

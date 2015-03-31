@@ -69,6 +69,6 @@ and pp_term_wp out = function
   | t                                  -> Printf.fprintf out "(%a)" pp_term t
 
 let pp_context out ctx =
-  pp_list ".\n" (fun out (_,x,ty) ->
+  pp_list ", " (fun out (_,x,ty) ->
                    Printf.fprintf out "%a: %a" pp_ident x pp_term ty )
     out (List.rev ctx)

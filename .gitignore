@@ -1,9 +1,6 @@
 /_build/
-dkcheck.docdir
-dkcheck.native
-dkdep.native
-dkrule.native
-dktop.native
+*.docdir
+*.native
 .*.swp
 .*.swo
 _*/

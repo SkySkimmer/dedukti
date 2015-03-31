@@ -41,11 +41,11 @@ module type Meta = sig
   
   val empty : t
   
-  val unify : Signature.t -> t -> term -> term -> t option
+  val unify : Signature.t -> Context.t -> t -> term -> term -> t option
   
   val whnf : Signature.t -> t -> term -> term
   
-  val unify_sort : Signature.t -> t -> term -> t option
+  val unify_sort : Signature.t -> Context.t -> t -> term -> t option
   val new_sort : t -> Context.t -> loc -> ident -> t*term
   val new_meta : t -> Context.t -> loc -> ident -> term -> t*judgment
   val get_meta : t -> term -> metainfo

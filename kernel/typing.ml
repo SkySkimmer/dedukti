@@ -77,16 +77,21 @@ type metainfo =
   | MetaSort of Context.t*int
   | MetaDef  of Context.t*int*term*term
 
+let pp_metainfo out = function
+  | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context (Context.to_context ctx) n pp_term ty
+  | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context (Context.to_context ctx) n
+  | MetaDef (ctx,n,te,ty) -> Printf.fprintf out "%a |- ?_%i := %a : %a" pp_context (Context.to_context ctx) n pp_term te pp_term ty
+
 module type Meta = sig
   type t
   
   val empty : t
   
-  val unify : Signature.t -> t -> term -> term -> t option
+  val unify : Signature.t -> Context.t -> t -> term -> term -> t option
   
   val whnf : Signature.t -> t -> term -> term
 
-  val unify_sort : Signature.t -> t -> term -> t option
+  val unify_sort : Signature.t -> Context.t -> t -> term -> t option
   val new_sort : t -> Context.t -> loc -> ident -> t*term
   val new_meta : t -> Context.t -> loc -> ident -> term -> t*judgment
   val get_meta : t -> term -> metainfo
@@ -99,11 +104,11 @@ module KMeta : Meta = struct
   
   let empty = ()
   
-  let unify sg _ t1 t2 = if Reduction.are_convertible sg t1 t2 then Some () else None
+  let unify sg _ _ t1 t2 = if Reduction.are_convertible sg t1 t2 then Some () else None
   
   let whnf sg _ = Reduction.whnf sg
   
-  let unify_sort _ _ = function
+  let unify_sort _ _ _ = function
     | Kind | Type _ -> Some ()
     | _ -> None
   
@@ -121,8 +126,9 @@ module RMeta : Meta = struct
   
   let empty = { cpt=0; decls=[]; defs=[]; }
   
-  let unify sg pb t1 t2 = if Reduction.are_convertible sg t1 t2 then Some pb
-    else failwith "Unification fail"
+  let pp_def out (ctx,n,te,ty) = pp_metainfo out (MetaDef (ctx,n,te,ty))
+  
+  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list " ; " pp_metainfo) pb.decls (pp_list " ; " pp_def) pb.defs
   
   let meta_val pb = function
     | Meta (_,_,n,ts) -> begin
@@ -142,11 +148,7 @@ module RMeta : Meta = struct
         | None -> t0
         end
     | t0 -> t0
-  
-  let unify_sort sg pb = function
-    | Kind | Type _ -> Some pb
-    | t -> unify sg pb t (mk_Type dloc)
-  
+
   let new_sort pb ctx l s = let len = List.length (Context.to_context ctx) in
     let mk = mk_Meta dloc s pb.cpt (List.map (mk_DB dloc Basics.empty) (revseq (len-1) 0)) in
       {cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;},mk
@@ -162,13 +164,37 @@ module RMeta : Meta = struct
         end
     | _ -> assert false
   
+  let set_meta pb n t = match List.partition (function | MetaDecl (_,m,_) | MetaSort (_,m) -> n=m
+                                                       | MetaDef _ -> assert false) pb.decls with
+    | decls,[info] -> let (ctx,ty) = (match info with
+        | MetaDecl (ctx,_,ty) -> ctx,ty
+        | MetaSort (ctx,_) -> ctx,mk_Kind (*probably false*)
+        | _ -> assert false) in
+      {cpt=pb.cpt; decls=decls; defs=(ctx,n,t,ty)::pb.defs;}
+    | _ -> raise Not_found
+  
+  let unify sg ctx pb t1 t2 = let t1' = whnf sg pb t1 in let t2' = whnf sg pb t2 in
+    if Reduction.are_convertible sg t1' t2'
+      then Some pb
+      else begin (*Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb;*)
+      match t1' with
+        | Meta (_,_,n,ts) -> Some (set_meta pb n t2')
+        | _ -> match t2' with
+          | Meta (_,_,n,ts) -> Some (set_meta pb n t1')
+          | _ -> None
+    end
+
+  let unify_sort sg ctx pb = function
+    | Kind | Type _ -> Some pb
+    | t -> unify sg ctx pb t (mk_Type dloc)
+  
   let rec apply pb = function
     | Kind | Type _ | Const _ | DB _ as t -> t
     | App (f,a,args) -> mk_App (apply pb f) (apply pb a) (List.map (apply pb) args)
     | Lam (lc,x,None,te) -> mk_Lam lc x None (apply pb te)
     | Lam (lc,x,Some ty, te) -> mk_Lam lc x (Some (apply pb ty)) (apply pb te)
     | Pi (lc,x,a,b) -> mk_Pi lc x (apply pb a) (apply pb b)
-    | Hole _ -> assert false
+    | Hole (lc,s) -> assert false
     | Meta (lc,s,n,ts) as mt -> begin match meta_val pb mt with
         | Some mt' -> apply pb mt'
         | None -> mk_Meta lc s n (List.map (apply pb) ts)
@@ -199,15 +225,15 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
     | App (f,a,args) -> let (pb2,jdg_f) = infer sg pb ctx f in
         check_app sg pb2 jdg_f [] [] (a::args)
     | Pi (l,x,a,b) ->
-        let pb2,jdg_a = infer sg pb ctx a in
+        let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
           ( match jdg_b.ty with
-              | Kind | Type _ as ty -> pb3,{ ctx=ctx; te=mk_Pi l x a jdg_b.te; ty=ty }
+              | Kind | Type _ as ty -> pb3,{ ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=ty }
               | _ -> raise (TypingError
                               (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
           )
     | Lam  (l,x,Some a,b) ->
-        let pb2,jdg_a = infer sg pb ctx a in
+        let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
           ( match jdg_b.ty with
               | Kind -> raise (TypingError
@@ -248,7 +274,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
             )
         | _ ->
           let pb2,jte = infer sg pb ctx te in
-            match M.unify sg pb2 jte.ty ty_exp with
+            match M.unify sg ctx pb2 jte.ty ty_exp with
               | Some pb3 -> pb3,{ ctx=ctx; te=jte.te; ty=ty_exp; }
               | None -> raise (TypingError (
                   ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
@@ -268,7 +294,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
 		     (* variables in ctx need to be kept the same, but Subst.psubst_l would modify them if we didn't append a bunch of DB *)
 		    let subst0 = (mk_DB dloc empty 0)::subst_pre in
 		    let mk0 = subst_l subst0 0 mk in begin
-		    match M.unify sg pb3 jdg_f.ty (mk_Pi dloc empty jdg_u.ty mk0) with (* ty_f === Pi ty_u mk0 *)
+		    match M.unify sg ctx pb3 jdg_f.ty (mk_Pi dloc empty jdg_u.ty mk0) with (* ty_f === Pi ty_u mk0 *)
 		      | Some pb4 -> let subst1 = jdg_u.te::subst_pre in
 		          let mk1 = subst_l subst1 0 mk in
 		            check_app sg pb4 {ctx=ctx; te=mk_App jdg_f.te jdg_u.te []; ty=mk1;} (jdg_u.te::consumed_te) (jdg_u.ty::consumed_ty) atl
@@ -297,7 +323,8 @@ module MetaRefine : RefinerS with type meta_t = RMeta.t
 
 let inference sg (te:term) : judgment =
   let pb,jdg0 = MetaRefine.infer sg RMeta.empty Context.empty te in
-    snd (KRefine.infer sg KMeta.empty Context.empty (RMeta.apply pb jdg0.te))
+  let te0 = RMeta.apply pb jdg0.te in
+    snd (KRefine.infer sg KMeta.empty Context.empty (RMeta.apply pb te0))
 
 let checking sg (te:term) (ty_exp:term) : judgment =
   let pb,jty = KRefine.infer sg KMeta.empty Context.empty ty_exp in
@@ -429,8 +456,8 @@ let check_rule sg (ctx,le,ri:rule) : unit =
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
-  let _,j_ri = KRefine.infer sg KMeta.empty ctx (SS.apply sigma ri2) in
-    match KMeta.unify sg KMeta.empty ty_inf j_ri.ty with
+  let _,j_ri = KRefine.infer sg KMeta.empty ctx ri2 in
+    match KMeta.unify sg ctx KMeta.empty ty_inf j_ri.ty with
       | Some _ -> ()
       | None -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 

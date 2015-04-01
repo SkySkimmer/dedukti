@@ -47,7 +47,7 @@ let rec term_eq t1 t2 =
           with _ -> false )
     | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq b b'
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
-    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && List.for_all2 term_eq ts ts'
+    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && (try List.for_all2 term_eq ts ts' with | Invalid_argument _ -> false)
     | _, _  -> false
 
 let rec pp_term out = function

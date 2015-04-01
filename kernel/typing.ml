@@ -235,13 +235,13 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
     | Lam  (l,x,Some a,b) ->
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match M.unify sg ctx pb3 jdg_b.ty (mk_Type dloc) with (* b_ty is either Type or Kind, but we don't want Kind *)
-              | None -> raise (TypingError
+          ( match jdg_b.ty with (* needs a meta case *)
+              | Kind -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
-              | Some pb4 -> pb4,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
+              | _ -> pb3,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
-    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l))
+    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l)) (* TODO: make a meta ?j : Type to fill the None *)
     | Hole (lc,s) -> let pb2,mk = M.new_sort pb ctx lc s in
         M.new_meta pb2 ctx lc s mk
     | Meta (lc,s,n,ts) as mv -> begin match M.get_meta pb mv with (* Check the indices once things happen *)
@@ -290,7 +290,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
             let ctxlen = List.length (Context.to_context ctx) in let rlen = List.length consumed_te in
 		    let (pb2,jdg_u) = infer sg pb ctx u in
 		    let ctx0 = List.fold_right (fun ty ctx0 -> Context.add dloc empty {ctx=ctx0; te=ty; ty=mk_Type dloc;}) (jdg_u.ty::consumed_ty) ctx in
-		    let (pb3,mk) = M.new_sort pb2 ctx0 dloc empty in (* mk new sort meta in consumed_ty ++ ctx *)
+		    let (pb3,mk) = M.new_sort pb2 ctx0 dloc empty in (* mk new sort meta in u_inf::consumed_ty ++ ctx *)
 		    let subst_pre = List.append consumed_te (List.rev_map (mk_DB dloc empty) (revseq (1+rlen) (rlen+ctxlen))) in
 		     (* variables in ctx need to be kept the same, but Subst.psubst_l would modify them if we didn't append a bunch of DB *)
 		    let subst0 = (mk_DB dloc empty 0)::subst_pre in

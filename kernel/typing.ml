@@ -227,15 +227,15 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
     | Pi (l,x,a,b) ->
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match jdg_b.ty with
-              | Kind | Type _ as ty -> pb3,{ ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=ty }
-              | _ -> raise (TypingError
+          ( match M.unify_sort sg ctx pb3 jdg_b.ty with
+              | Some pb4 -> pb4,{ ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
+              | None -> raise (TypingError
                               (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
           )
     | Lam  (l,x,Some a,b) ->
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match M.unify sg pb3 jdg_b.ty (mk_Type dloc) with (* b_ty is either Type or Kind, but we don't want Kind *)
+          ( match M.unify sg ctx pb3 jdg_b.ty (mk_Type dloc) with (* b_ty is either Type or Kind, but we don't want Kind *)
               | None -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
               | Some pb4 -> pb4,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;

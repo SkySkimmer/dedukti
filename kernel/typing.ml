@@ -224,7 +224,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
         pb,{ ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
     | App (f,a,args) -> let (pb2,jdg_f) = infer sg pb ctx f in
         check_app sg pb2 jdg_f [] [] (a::args)
-    | Pi (l,x,a,b) ->
+    | Pi (l,x,a,b) -> (* NB: this won't work in coc mode since we could also have a:Kind *)
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
           ( match M.unify_sort sg ctx pb3 jdg_b.ty with
@@ -232,19 +232,20 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
               | None -> raise (TypingError
                               (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
           )
-    | Lam  (l,x,Some a,b) ->
+    | Lam  (l,x,Some a,b) -> (* same problem as with Pi *)
         let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
         let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match jdg_b.ty with (* needs a meta case *)
+          ( match jdg_b.ty with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
               | Kind -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
               | _ -> pb3,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
-    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l)) (* TODO: make a meta ?j : Type to fill the None *)
-    | Hole (lc,s) -> let pb2,mk = M.new_sort pb ctx lc s in
+    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l)) (* TODO: make a meta ?_j : Type to annotate (?) *)
+    | Hole (lc,s) -> let pb2,mk = M.new_sort pb ctx lc s in (* shouldn't actually be new_sort *)
         M.new_meta pb2 ctx lc s mk
     | Meta (lc,s,n,ts) as mv -> begin match M.get_meta pb mv with (* Check the indices once things happen *)
+     (* It would be better to not have knowledge of the implementation of the meta environment here. IE have a function return the types to be checked only or something. *)
         | MetaDecl (ctx0,_,ty0) | MetaDef (ctx0,_,_,ty0) -> let len = List.length (Context.to_context ctx0) in
           let (pb1,_,ts1) = List.fold_left
               (fun (pb0,i,tjs) te_i -> let ty_i = Context.get_type ctx0 dloc empty i in
@@ -262,9 +263,9 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
   and check sg (pb:M.t) (te:term) (jty:judgment) : M.t*judgment =
     let ty_exp = jty.te in
     let ctx = jty.ctx in
-      match te with
+      match te with (* Maybe do the match on lambda and type at the same time? Since we may be able to infer types for non annotated lambdas. *)
         | Lam (l,x,None,u) ->
-            ( match M.whnf sg pb ty_exp with
+            ( match M.whnf sg pb ty_exp with (* If this was a meta we might be able to do something. *)
                 | Pi (_,_,a,b) as pi ->
                     let ctx2 = Context.unsafe_add ctx l x a in
                     (* (x) might as well be Kind but here we do not care*)
@@ -287,6 +288,7 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
         | Pi (_,_,a,b) -> let (pb2,u_inf) = check sg pb u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} in
             check_app sg pb2 {ctx=jdg_f.ctx; te=mk_App jdg_f.te u_inf.te []; ty=Subst.subst b u_inf.te;} (u_inf.te::consumed_te) (a::consumed_ty) atl
         | Meta _ | App (Meta _, _, _) -> let ctx = jdg_f.ctx in
+         (* We could also have this case as default and fail on the unify step. Maybe. *)
             let ctxlen = List.length (Context.to_context ctx) in let rlen = List.length consumed_te in
 		    let (pb2,jdg_u) = infer sg pb ctx u in
 		    let ctx0 = List.fold_right (fun ty ctx0 -> Context.add dloc empty {ctx=ctx0; te=ty; ty=mk_Type dloc;}) (jdg_u.ty::consumed_ty) ctx in

@@ -72,236 +72,184 @@ type judgment = Context.t judgment0
 
 (* ********************** METAS *)
 
-type metainfo =
-  | MetaDecl of Context.t*int*term
-  | MetaSort of Context.t*int
-  | MetaDef  of Context.t*int*term*term
-
-let pp_metainfo out = function
-  | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context (Context.to_context ctx) n pp_term ty
-  | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context (Context.to_context ctx) n
-  | MetaDef (ctx,n,te,ty) -> Printf.fprintf out "%a |- ?_%i := %a : %a" pp_context (Context.to_context ctx) n pp_term te pp_term ty
-
 module type Meta = sig
-  type t
+  type 'a t
   
-  val empty : t
+  val return : 'a -> 'a t
+  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
-  val unify : Signature.t -> Context.t -> t -> term -> term -> t option
+  val unify : Signature.t -> Context.t -> term -> term -> bool t
   
-  val whnf : Signature.t -> t -> term -> term
-
-  val unify_sort : Signature.t -> Context.t -> t -> term -> t option
-  val new_sort : t -> Context.t -> loc -> ident -> t*term
-  val new_meta : t -> Context.t -> loc -> ident -> term -> t*judgment
-  val get_meta : t -> term -> metainfo
+  val whnf : Signature.t -> term -> term t
   
-  val apply : t -> term -> term
+  val unify_sort : Signature.t -> Context.t -> term -> bool t
+  val new_sort : Context.t -> loc -> ident -> term t
+  val new_meta : Context.t -> loc -> ident -> term -> judgment t
+  
+  val eval : term t -> term
 end
 
-module KMeta : Meta = struct
-  type t = unit
+module KMeta = struct
+  type 'a t = 'a
   
-  let empty = ()
+  let return x = x
+  let (>>=) x f = f x
   
-  let unify sg _ _ t1 t2 = if Reduction.are_convertible sg t1 t2 then Some () else None
+  let unify sg ctx t1 t2 = Reduction.are_convertible sg t1 t2
   
-  let whnf sg _ = Reduction.whnf sg
+  let whnf = Reduction.whnf
   
-  let unify_sort _ _ _ = function
-    | Kind | Type _ -> Some ()
-    | _ -> None
+  let unify_sort sg ctx = function
+    | Kind | Type _ -> true
+    | _ -> false
   
-  let new_sort _ _ l s = raise (TypingError (MetaInKernel (l,s)))
-  let new_meta _ _ l s _ = raise (TypingError (MetaInKernel (l,s)))
-  let get_meta _ = function
-    | Meta (lc,s,_,_) -> raise (TypingError (MetaInKernel (lc,s)))
-    | _ -> assert false
+  let new_sort ctx l s = raise (TypingError (MetaInKernel (l,s)))
+  let new_meta ctx l s ty = raise (TypingError (MetaInKernel (l,s)))
   
-  let apply _ t = t
+  let eval t = t
 end
 
-module RMeta : Meta = struct
-  type t = { cpt:int; decls: metainfo list; defs: (Context.t*int*term*term) list; }
+module RMeta = struct
+  module S = Msubst.S
   
-  let empty = { cpt=0; decls=[]; defs=[]; }
-  
-  let pp_def out (ctx,n,te,ty) = pp_metainfo out (MetaDef (ctx,n,te,ty))
-  
-  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list " ; " pp_metainfo) pb.decls (pp_list " ; " pp_def) pb.defs
-  
-  let meta_val pb = function
-    | Meta (_,_,n,ts) -> begin
-      try let (_,_,te0,_) = List.find (fun (_,m,_,_) -> n=m) pb.defs in
-        let subst1 = List.rev ts in Some (subst_l subst1 0 te0)
-      with | Not_found -> None
-      end
-    | _ -> None
-  
-  let rec whnf sg pb t = match Reduction.whnf sg t with
-    | Meta _ as mt -> begin match meta_val pb mt with
-        | Some mt' -> whnf sg pb mt'
-        | None -> mt
-        end
-    | App (Meta _ as mt, a, al) as t0 -> begin match meta_val pb mt with
-        | Some mt' -> whnf sg pb (mk_App mt' a al)
-        | None -> t0
-        end
-    | t0 -> t0
+  type metainfo =
+    | MetaDecl of Context.t*int*term (* ctx |- ?j : ty *)
+    | MetaType of Context.t*int      (* either ctx |- ?j : s or ?j = Kind *)
+    | MetaSort of Context.t*int      (* ?j = Type or Kind *)
 
-  let new_sort pb ctx l s = let len = List.length (Context.to_context ctx) in
+  let pp_metainfo out = function
+    | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context (Context.to_context ctx) n pp_term ty
+    | MetaType (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context (Context.to_context ctx) n
+    | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i sort" pp_context (Context.to_context ctx) n
+
+  type problem = { cpt:int; decls: metainfo list; defs: S.t; }
+  
+  type 'a t = problem -> 'a * problem
+  
+  let return x pb = (x,pb)
+  let (>>=) x f pb = let (x',pb') = x pb in f x' pb'
+  
+  let empty = { cpt=0; decls=[]; defs=S.identity; }
+  
+  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list " ; " pp_metainfo) pb.decls S.pp pb.defs
+    
+  let whnf sg t pb = (S.whnf sg pb.defs t,pb)
+
+  let new_sort ctx l s pb = let len = List.length (Context.to_context ctx) in
     let mk = mk_Meta dloc s pb.cpt (List.map (mk_DB dloc Basics.empty) (revseq (len-1) 0)) in
-      {cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;},mk
+      (mk,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
   
-  let new_meta pb ctx l s ty = let len = List.length (Context.to_context ctx) in
+  let new_meta ctx l s ty pb = let len = List.length (Context.to_context ctx) in
     let mj = mk_Meta dloc s pb.cpt (List.map (mk_DB dloc Basics.empty) (revseq (len-1) 0)) in
-      {cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;},{ctx=ctx; te=mj; ty=ty;}
-  
-  let get_meta pb = function
-    | Meta (_,_,n,_) -> begin try let (ctx,m,te,ty) = (List.find (fun (_,m,_,_) -> n=m) pb.defs) in MetaDef (ctx,m,te,ty)
-        with | Not_found -> List.find (function | MetaSort (_,m) | MetaDecl (_,m,_) -> n=m
-                                                | MetaDef _ -> assert false) pb.decls
-        end
-    | _ -> assert false
-  
-  let set_meta pb n t = match List.partition (function | MetaDecl (_,m,_) | MetaSort (_,m) -> n=m
-                                                       | MetaDef _ -> assert false) pb.decls with
-    | [info],decls -> let (ctx,ty) = (match info with
-        | MetaDecl (ctx,_,ty) -> ctx,ty
-        | MetaSort (ctx,_) -> ctx,mk_Kind (* Probably false. Can we set meta to Kind? *)
-        | _ -> assert false) in
-      {cpt=pb.cpt; decls=decls; defs=(ctx,n,t,ty)::pb.defs;}
-    | _ -> assert false
-  
-  let unify sg ctx pb t1 t2 = let t1' = whnf sg pb t1 in let t2' = whnf sg pb t2 in
+      ({ctx=ctx; te=mj; ty=ty;},{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;})
+    
+  let unify sg ctx t1 t2 pb = let t1',_ = whnf sg t1 pb in let t2',_ = whnf sg t2 pb in
     if Reduction.are_convertible sg t1' t2'
-      then Some pb
+      then (true,pb)
       else begin (*Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb;*)
       match t1' with
-        | Meta (_,_,n,ts) -> Some (set_meta pb n t2')
+        | Meta (_,_,n,ts) -> (true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t2'})
         | _ -> match t2' with
-          | Meta (_,_,n,ts) -> Some (set_meta pb n t1')
-          | _ -> None
+          | Meta (_,_,n,ts) -> (true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t1'})
+          | _ -> false,pb
     end
 
-  let unify_sort sg ctx pb = function
-    | Kind | Type _ -> Some pb
-    | t -> unify sg ctx pb t (mk_Type dloc)
+  let unify_sort sg ctx t pb = match t with
+    | Kind | Type _ -> true,pb
+    | t -> unify sg ctx t (mk_Type dloc) pb
   
-  let rec apply pb = function
-    | Kind | Type _ | Const _ | DB _ as t -> t
-    | App (f,a,args) -> mk_App (apply pb f) (apply pb a) (List.map (apply pb) args)
-    | Lam (lc,x,None,te) -> mk_Lam lc x None (apply pb te)
-    | Lam (lc,x,Some ty, te) -> mk_Lam lc x (Some (apply pb ty)) (apply pb te)
-    | Pi (lc,x,a,b) -> mk_Pi lc x (apply pb a) (apply pb b)
-    | Hole (lc,s) -> assert false
-    | Meta (lc,s,n,ts) as mt -> begin match meta_val pb mt with
-        | Some mt' -> apply pb mt'
-        | None -> mk_Meta lc s n (List.map (apply pb) ts)
-      end
+  let apply pb t = S.apply pb.defs t
+  
+  let eval t = let (t',pb) = t empty in
+    apply pb t'
 
 end
 
 (* ********************** TYPE CHECKING/INFERENCE FOR TERMS  *)
 module type RefinerS = sig
-  type meta_t
+  type 'a t
 
-  val infer : Signature.t -> meta_t -> Context.t -> term -> meta_t*judgment
+  val infer : Signature.t -> Context.t -> term -> judgment t
 
-  val check : Signature.t -> meta_t -> term -> judgment -> meta_t*judgment
+  val check : Signature.t -> term -> judgment -> judgment t
 end
 
-module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
-  type meta_t = M.t
+module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
+  type 'a t = 'a M.t
 
-  let rec infer sg (pb:M.t) (ctx:Context.t) : term -> M.t*judgment = function
+  let (>>=) = M.(>>=)
+
+  let rec infer sg (ctx:Context.t) : term -> judgment t = function
     | Kind -> raise (TypingError KindIsNotTypable)
-    | Type l ->
-        pb,{ ctx=ctx; te=mk_Type l; ty= mk_Kind; }
-    | DB (l,x,n) ->
-        pb,{ ctx=ctx; te=mk_DB l x n; ty= Context.get_type ctx l x n }
-    | Const (l,md,id) ->
-        pb,{ ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
-    | App (f,a,args) -> let (pb2,jdg_f) = infer sg pb ctx f in
-        check_app sg pb2 jdg_f [] [] (a::args)
+    | Type l -> M.return { ctx=ctx; te=mk_Type l; ty= mk_Kind; }
+    | DB (l,x,n) -> M.return { ctx=ctx; te=mk_DB l x n; ty= Context.get_type ctx l x n }
+    | Const (l,md,id) -> M.return { ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
+    | App (f,a,args) -> infer sg ctx f >>= fun jdg_f ->
+        check_app sg jdg_f [] [] (a::args)
     | Pi (l,x,a,b) -> (* NB: this won't work in coc mode since we could also have a:Kind *)
-        let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
-        let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
-          ( match M.unify_sort sg ctx pb3 jdg_b.ty with
-              | Some pb4 -> pb4,{ ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
-              | None -> raise (TypingError
-                              (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
-          )
+        check sg a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} >>= fun jdg_a ->
+        infer sg (Context.add l x jdg_a) b >>= fun jdg_b ->
+        M.unify_sort sg ctx jdg_b.ty >>= fun b -> if b
+          then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
+          else raise (TypingError
+                         (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
     | Lam  (l,x,Some a,b) -> (* same problem as with Pi *)
-        let pb2,jdg_a = check sg pb a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} in
-        let pb3,jdg_b = infer sg pb2 (Context.add l x jdg_a) b in
+        check sg a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} >>= fun jdg_a ->
+        infer sg (Context.add l x jdg_a) b >>= fun jdg_b ->
           ( match jdg_b.ty with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
               | Kind -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))
-              | _ -> pb3,{ ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
+              | _ -> M.return { ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
     | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l)) (* TODO: make a meta ?_j : Type to annotate (?) *)
-    | Hole (lc,s) -> let pb2,mk = M.new_sort pb ctx lc s in (* shouldn't actually be new_sort *)
-        M.new_meta pb2 ctx lc s mk
-    | Meta (lc,s,n,ts) as mv -> begin match M.get_meta pb mv with (* Check the indices once things happen *)
-     (* It would be better to not have knowledge of the implementation of the meta environment here. IE have a function return the types to be checked only or something. *)
-        | MetaDecl (ctx0,_,ty0) | MetaDef (ctx0,_,_,ty0) -> let len = List.length (Context.to_context ctx0) in
-          let (pb1,_,ts1) = List.fold_left
-              (fun (pb0,i,tjs) te_i -> let ty_i = Context.get_type ctx0 dloc empty i in
-                 let subst1 = List.append (List.map (mk_DB dloc empty) (revseq (len-1) i)) tjs in
-                 let ty_exp = subst_l subst1 0 ty_i in
-                 let (pb1,jdg) = check sg pb0 te_i {ctx=ctx; te=ty_exp; ty=mk_Type dloc;} in
-                   (pb1,i+1,jdg.te::tjs))
-              (pb,0,[]) (List.rev ts) in
-          let ts2 = List.rev ts1 in
-            pb1,{ctx=ctx; te=mk_Meta lc s n ts2; ty=subst_l ts1 0 ty0;}
-        | MetaSort _ -> raise (TypingError (InferSortMeta (lc,s)))
-        end
-    
+    | Hole (lc,s) ->
+        M.new_sort ctx lc s >>= fun mk -> (* shouldn't actually be new_sort *)
+        M.new_meta ctx lc s mk
+    | Meta (lc,s,n,ts) as mv -> failwith "TODO: inference on metavariable"
 
-  and check sg (pb:M.t) (te:term) (jty:judgment) : M.t*judgment =
+  and check sg (te:term) (jty:judgment) : judgment t =
     let ty_exp = jty.te in
     let ctx = jty.ctx in
-      match te with (* Maybe do the match on lambda and type at the same time? Since we may be able to infer types for non annotated lambdas. *)
+      match te with (* Maybe do the match on term and type at the same time? In case type is a meta. *)
         | Lam (l,x,None,u) ->
-            ( match M.whnf sg pb ty_exp with (* If this was a meta we might be able to do something. *)
+            ( M.whnf sg ty_exp >>= function (* If this was a meta we might be able to do something. *)
                 | Pi (_,_,a,b) as pi ->
                     let ctx2 = Context.unsafe_add ctx l x a in
                     (* (x) might as well be Kind but here we do not care*)
-                    let pb2,jdg_b = check sg pb u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } in
-                      pb2,{ ctx=ctx; te=mk_Lam l x None jdg_b.te; ty=pi; }
+                    check sg u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } >>= fun jdg_b ->
+                      M.return { ctx=ctx; te=mk_Lam l x None jdg_b.te; ty=pi; }
                 | _ -> raise (TypingError
                                 (ProductExpected (te,Context.to_context jty.ctx,jty.te)))
             )
         | _ ->
-          let pb2,jte = infer sg pb ctx te in
-            match M.unify sg ctx pb2 jte.ty ty_exp with
-              | Some pb3 -> pb3,{ ctx=ctx; te=jte.te; ty=ty_exp; }
-              | None -> raise (TypingError (
-                  ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
+          infer sg ctx te >>= fun jte ->
+          M.unify sg ctx jte.ty ty_exp >>= fun b -> if b
+            then M.return { ctx=ctx; te=jte.te; ty=ty_exp; }
+            else raise (TypingError
+                            (ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
 
-  and check_app sg pb jdg_f consumed_te consumed_ty args = 
+  and check_app sg jdg_f consumed_te consumed_ty args = 
     match args with
-      | [] -> pb,jdg_f
-      | u::atl -> begin match M.whnf sg pb jdg_f.ty with
-        | Pi (_,_,a,b) -> let (pb2,u_inf) = check sg pb u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} in
-            check_app sg pb2 {ctx=jdg_f.ctx; te=mk_App jdg_f.te u_inf.te []; ty=Subst.subst b u_inf.te;} (u_inf.te::consumed_te) (a::consumed_ty) atl
+      | [] -> M.return jdg_f
+      | u::atl -> begin M.whnf sg jdg_f.ty >>= function
+        | Pi (_,_,a,b) -> check sg u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} >>= fun u_inf ->
+            check_app sg {ctx=jdg_f.ctx; te=mk_App jdg_f.te u_inf.te []; ty=Subst.subst b u_inf.te;} (u_inf.te::consumed_te) (a::consumed_ty) atl
         | Meta _ | App (Meta _, _, _) -> let ctx = jdg_f.ctx in
          (* We could also have this case as default and fail on the unify step. Maybe. *)
             let ctxlen = List.length (Context.to_context ctx) in let rlen = List.length consumed_te in
-		    let (pb2,jdg_u) = infer sg pb ctx u in
+		    infer sg ctx u >>= fun jdg_u ->
 		    let ctx0 = List.fold_right (fun ty ctx0 -> Context.add dloc empty {ctx=ctx0; te=ty; ty=mk_Type dloc;}) (jdg_u.ty::consumed_ty) ctx in
-		    let (pb3,mk) = M.new_sort pb2 ctx0 dloc empty in (* mk new sort meta in u_inf::consumed_ty ++ ctx *)
+		    M.new_sort ctx0 dloc empty >>= fun mk -> (* mk new sort meta in u_inf::consumed_ty ++ ctx *)
 		    let subst_pre = List.append consumed_te (List.rev_map (mk_DB dloc empty) (revseq (1+rlen) (rlen+ctxlen))) in
 		     (* variables in ctx need to be kept the same, but Subst.psubst_l would modify them if we didn't append a bunch of DB *)
 		    let subst0 = (mk_DB dloc empty 0)::subst_pre in
 		    let mk0 = subst_l subst0 0 mk in begin
-		    match M.unify sg ctx pb3 jdg_f.ty (mk_Pi dloc empty jdg_u.ty mk0) with (* ty_f === Pi ty_u mk0 *)
-		      | Some pb4 -> let subst1 = jdg_u.te::subst_pre in
-		          let mk1 = subst_l subst1 0 mk in
-		            check_app sg pb4 {ctx=ctx; te=mk_App jdg_f.te jdg_u.te []; ty=mk1;} (jdg_u.te::consumed_te) (jdg_u.ty::consumed_ty) atl
-		      | None -> raise (TypingError (ProductExpected (jdg_f.te, Context.to_context ctx, jdg_f.ty)))
+		    M.unify sg ctx jdg_f.ty (mk_Pi dloc empty jdg_u.ty mk0) >>= fun b -> if b (* ty_f === Pi ty_u mk0 *)
+		      then let subst1 = jdg_u.te::subst_pre in
+		           let mk1 = subst_l subst1 0 mk in
+		             check_app sg {ctx=ctx; te=mk_App jdg_f.te jdg_u.te []; ty=mk1;} (jdg_u.te::consumed_te) (jdg_u.ty::consumed_ty) atl
+		      else raise (TypingError (ProductExpected (jdg_f.te, Context.to_context ctx, jdg_f.ty)))
 		    end
         | _ -> raise (TypingError (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
         end
@@ -318,23 +266,22 @@ module Refiner (M:Meta) : RefinerS with type meta_t = M.t = struct
 
 end
 
-module KRefine : RefinerS with type meta_t = KMeta.t
+module KRefine : RefinerS with type 'a t = 'a
  = Refiner(KMeta)
 
-module MetaRefine : RefinerS with type meta_t = RMeta.t
+module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
  = Refiner(RMeta)
 
 let inference sg (te:term) : judgment =
-  let pb,jdg0 = MetaRefine.infer sg RMeta.empty Context.empty te in
+  let jdg0,pb = MetaRefine.infer sg Context.empty te RMeta.empty in
   let te0 = RMeta.apply pb jdg0.te in
-    snd (KRefine.infer sg KMeta.empty Context.empty te0)
+    KRefine.infer sg Context.empty te0
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let pb,jdg_ty = MetaRefine.infer sg RMeta.empty Context.empty ty_exp in
-  let pb2,jdg_te = MetaRefine.check sg pb te jdg_ty in
-  let ty_r = RMeta.apply pb2 jdg_ty.te in let te_r = RMeta.apply pb2 jdg_te.te in
-  let _,jty = KRefine.infer sg KMeta.empty Context.empty ty_r in
-    snd (KRefine.check sg KMeta.empty te_r jty)
+  let jdg_te,pb = (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty) RMeta.empty) in
+  let ty_r = RMeta.apply pb jdg_te.ty in let te_r = RMeta.apply pb jdg_te.te in
+  let jty = KRefine.infer sg Context.empty ty_r in
+    KRefine.check sg te_r jty
 
 (* **** PSEUDO UNIFICATION ********************** *)
 
@@ -417,11 +364,11 @@ let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:SS.t) (pat:pattern) : te
     let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
         (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args in
     (ty,si)
-  | Brackets t -> ( (snd(KRefine.infer sg KMeta.empty ctx t)).ty, SS.identity )
+  | Brackets t -> ( (KRefine.infer sg ctx t).ty, SS.identity )
   | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
 
 and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : term*term*SS.t =
-  match KMeta.whnf sg KMeta.empty ty_f with
+  match KMeta.whnf sg ty_f with
     | Pi (_,_,a,b) ->
         let sigma = check_pattern sg ctx q a sigma0 arg in
         let arg' = pattern_to_term arg in
@@ -434,14 +381,14 @@ and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pa
   match pat with
   | Lambda (l,x,p) ->
       begin
-        match KMeta.whnf sg KMeta.empty exp_ty with
+        match KMeta.whnf sg exp_ty with
           | Pi (l,x,a,b) ->
               let ctx2 = Context.unsafe_add ctx l x a in
                 check_pattern sg ctx2 (q+1) b sigma0 p
           | exp_ty -> raise (TypingError ( ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty)))
       end
    | Brackets t ->
-     ( ignore (KRefine.check sg KMeta.empty t { ctx; te=exp_ty; ty=Term.mk_Type dloc; });
+     ( ignore (KRefine.check sg t { ctx; te=exp_ty; ty=Term.mk_Type dloc; });
        SS.identity )
   | _ ->
       begin
@@ -456,16 +403,16 @@ and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pa
 
 let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
-    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (snd(KRefine.infer sg KMeta.empty ctx ty)) )
+    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx ty) )
       Context.empty (List.rev ctx) in
-  let (ty_inf,sigma) = infer_pattern sg ctx 0 SS.identity le in
+  let (ty_inf,sigma) = infer_pattern sg ctx SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
-  let _,j_ri = KRefine.infer sg KMeta.empty ctx ri2 in
-    match KMeta.unify sg ctx KMeta.empty ty_inf j_ri.ty with
-      | Some _ -> ()
-      | None -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
+  let j_ri = KRefine.infer sg ctx (SS.apply sigma ri2) in
+    if KMeta.unify sg ctx ty_inf j_ri.ty
+      then ()
+      else raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 
 (* ********************** JUDGMENTS *)
 (*

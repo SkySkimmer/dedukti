@@ -34,23 +34,21 @@ type judgment = Context.t judgment0
 
 (** {2 Meta aware operations} *)
 
-type metainfo
-
 module type Meta = sig
-  type t
+  type 'a t
   
-  val empty : t
+  val return : 'a -> 'a t
+  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
-  val unify : Signature.t -> Context.t -> t -> term -> term -> t option
+  val unify : Signature.t -> Context.t -> term -> term -> bool t
   
-  val whnf : Signature.t -> t -> term -> term
+  val whnf : Signature.t -> term -> term t
   
-  val unify_sort : Signature.t -> Context.t -> t -> term -> t option
-  val new_sort : t -> Context.t -> loc -> ident -> t*term
-  val new_meta : t -> Context.t -> loc -> ident -> term -> t*judgment
-  val get_meta : t -> term -> metainfo
+  val unify_sort : Signature.t -> Context.t -> term -> bool t
+  val new_sort : Context.t -> loc -> ident -> term t
+  val new_meta : Context.t -> loc -> ident -> term -> judgment t
   
-  val apply : t -> term -> term
+  val eval : term t -> term
 end
 
 module KMeta : Meta
@@ -60,21 +58,21 @@ module RMeta : Meta
 (** {2 Type Inference/Checking} *)
 
 module type RefinerS = sig
-  type meta_t
+  type 'a t
 
-  val infer       : Signature.t -> meta_t -> Context.t -> term -> meta_t*judgment
+  val infer       : Signature.t -> Context.t -> term -> judgment t
   (** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
 
-  val check       : Signature.t -> meta_t -> term -> judgment -> meta_t*judgment
+  val check       : Signature.t -> term -> judgment -> judgment t
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
 end
 
-module Refiner (M:Meta) : RefinerS with type meta_t = M.t
+module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t
 
-module KRefine : RefinerS with type meta_t = KMeta.t
+module KRefine : RefinerS with type 'a t = 'a KMeta.t
 
-module MetaRefine : RefinerS with type meta_t = RMeta.t
+module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of

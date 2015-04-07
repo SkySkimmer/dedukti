@@ -210,7 +210,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
     | Hole (lc,s) ->
         M.new_sort ctx lc s >>= fun mk -> (* shouldn't actually be new_sort *)
         M.new_meta ctx lc s mk
-    | Meta (lc,s,n,ts) as mv -> failwith "TODO: inference on metavariable"
+    | Meta (lc,s,n,ts) (*as mv*) -> failwith "TODO: inference on metavariable"
 
   and check sg (te:term) (jty:judgment) : judgment t =
     let ty_exp = jty.te in

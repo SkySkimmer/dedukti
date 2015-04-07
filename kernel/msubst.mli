@@ -1,4 +1,4 @@
-(** Subsitutions of metavariables *)
+(** Substitutions of metavariables *)
 open Term
 
 module S : sig

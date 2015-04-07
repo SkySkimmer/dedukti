@@ -49,6 +49,8 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> term -> judgment t
   
   val eval : term t -> term
+  val evalj : judgment t -> judgment
+  (** Beware: does not deal with context cleanly. *)
 end
 
 module KMeta : Meta

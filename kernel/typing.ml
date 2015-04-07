@@ -107,6 +107,7 @@ module KMeta = struct
   let new_meta ctx l s ty = raise (TypingError (MetaInKernel (l,s)))
   
   let eval t = t
+  let evalj j = j
 end
 
 module RMeta = struct
@@ -162,7 +163,9 @@ module RMeta = struct
   
   let eval t = let (t',pb) = t empty in
     apply pb t'
-
+  
+  let evalj jdg = let ({ctx=ctx; te=te; ty=ty;},pb) = jdg empty in
+    {ctx=ctx; te=apply pb te; ty=apply pb ty;}
 end
 
 (* ********************** TYPE CHECKING/INFERENCE FOR TERMS  *)
@@ -273,9 +276,8 @@ module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
  = Refiner(RMeta)
 
 let inference sg (te:term) : judgment =
-  let jdg0,pb = MetaRefine.infer sg Context.empty te RMeta.empty in
-  let te0 = RMeta.apply pb jdg0.te in
-    KRefine.infer sg Context.empty te0
+  let jdg0 = RMeta.evalj (MetaRefine.infer sg Context.empty te) in
+    KRefine.infer sg Context.empty jdg0.te
 
 let checking sg (te:term) (ty_exp:term) : judgment =
   let jdg_te,pb = (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty) RMeta.empty) in

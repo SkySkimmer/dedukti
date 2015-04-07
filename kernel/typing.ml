@@ -408,11 +408,11 @@ let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
     List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx ty) )
       Context.empty (List.rev ctx) in
-  let (ty_inf,sigma) = infer_pattern sg ctx SS.identity le in
+  let (ty_inf,sigma) = infer_pattern sg ctx 0 SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
-  let j_ri = KRefine.infer sg ctx (SS.apply sigma ri2) in
+  let j_ri = KRefine.infer sg ctx ri2 in
     if KMeta.unify sg ctx ty_inf j_ri.ty
       then ()
       else raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))

@@ -87,9 +87,10 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> term -> judgment t
   
   val eval : term t -> term
+  val evalj : judgment t -> judgment
 end
 
-module KMeta = struct
+module KMeta : Meta with type 'a t = 'a = struct
   type 'a t = 'a
   
   let return x = x
@@ -110,7 +111,7 @@ module KMeta = struct
   let evalj j = j
 end
 
-module RMeta = struct
+module RMeta : Meta = struct
   module S = Msubst.S
   
   type metainfo =
@@ -280,8 +281,8 @@ let inference sg (te:term) : judgment =
     KRefine.infer sg Context.empty jdg0.te
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let jdg_te,pb = (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty) RMeta.empty) in
-  let ty_r = RMeta.apply pb jdg_te.ty in let te_r = RMeta.apply pb jdg_te.te in
+  let jdg_te = RMeta.evalj (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty)) in
+  let ty_r = jdg_te.ty in let te_r = jdg_te.te in
   let jty = KRefine.infer sg Context.empty ty_r in
     KRefine.check sg te_r jty
 

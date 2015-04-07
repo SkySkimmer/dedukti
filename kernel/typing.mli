@@ -53,7 +53,7 @@ module type Meta = sig
   (** Beware: does not deal with context cleanly. *)
 end
 
-module KMeta : Meta
+module KMeta : Meta with type 'a t = 'a
 
 module RMeta : Meta
 

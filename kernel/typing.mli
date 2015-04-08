@@ -40,17 +40,18 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
-  val unify : Signature.t -> Context.t -> term -> term -> bool t
+  val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
   val whnf : Signature.t -> term -> term t
   
+  val unify : Signature.t -> Context.t -> term -> term -> bool t
   val unify_sort : Signature.t -> Context.t -> term -> bool t
   val new_sort : Context.t -> loc -> ident -> term t
   val new_meta : Context.t -> loc -> ident -> term -> judgment t
   
   val eval : term t -> term
   val evalj : judgment t -> judgment
-  (** Beware: does not deal with context cleanly. *)
+  (** Beware: does not eval the context. *)
 end
 
 module KMeta : Meta with type 'a t = 'a

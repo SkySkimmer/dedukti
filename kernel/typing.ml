@@ -78,10 +78,11 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
-  val unify : Signature.t -> Context.t -> term -> term -> bool t
+  val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
   val whnf : Signature.t -> term -> term t
   
+  val unify : Signature.t -> Context.t -> term -> term -> bool t
   val unify_sort : Signature.t -> Context.t -> term -> bool t
   val new_sort : Context.t -> loc -> ident -> term t
   val new_meta : Context.t -> loc -> ident -> term -> judgment t
@@ -96,7 +97,9 @@ module KMeta : Meta with type 'a t = 'a = struct
   let return x = x
   let (>>=) x f = f x
   
-  let unify sg ctx t1 t2 = Reduction.are_convertible sg t1 t2
+  let add _ = Context.add
+  
+  let unify sg ctx = Reduction.are_convertible sg
   
   let whnf = Reduction.whnf
   
@@ -144,21 +147,30 @@ module RMeta : Meta = struct
   let new_meta ctx l s ty pb = let len = List.length (Context.to_context ctx) in
     let mj = mk_Meta dloc s pb.cpt (List.map (mk_DB dloc Basics.empty) (revseq (len-1) 0)) in
       ({ctx=ctx; te=mj; ty=ty;},{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;})
-    
-  let unify sg ctx t1 t2 pb = let t1',_ = whnf sg t1 pb in let t2',_ = whnf sg t2 pb in
+  
+  let set_meta n t pb = (),{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t}
+  
+  let rec unify sg ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
     if Reduction.are_convertible sg t1' t2'
-      then (true,pb)
+      then return true
       else begin (*Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb;*)
-      match t1' with
-        | Meta (_,_,n,ts) -> (true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t2'})
-        | _ -> match t2' with
-          | Meta (_,_,n,ts) -> (true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t1'})
-          | _ -> false,pb
+      match t1', t2' with
+        | Meta (_,_,n,ts), _ -> set_meta n t2' >>= fun () -> return true
+        | _, Meta (_,_,n,ts) -> set_meta n t1' >>= fun () -> return true
+        | Pi (l,x,a1,b1), Pi(_,_,a2,b2) -> unify sg ctx a1 a2 >>= fun b -> if b
+          then unify sg (Context.unsafe_add ctx l x a1) b1 b2
+          else return false
+        | _, _ -> Printf.eprintf "Failed to unify %a === %a.\n" pp_term t1' pp_term t2'; return false
     end
 
-  let unify_sort sg ctx t pb = match t with
-    | Kind | Type _ -> true,pb
-    | t -> unify sg ctx t (mk_Type dloc) pb
+  let unify_sort sg ctx = function
+    | Kind | Type _ -> return true
+    | t -> unify sg ctx t (mk_Type dloc)
+  
+  let add sg l x jdg = (if !coc then unify_sort sg jdg.ctx jdg.ty else unify sg jdg.ctx jdg.ty (mk_Type dloc)) >>= fun b ->
+    if b then return (Context.unsafe_add jdg.ctx l x jdg.te)
+    else raise (TypingError (ConvertibilityError
+                                   (jdg.te, Context.to_context jdg.ctx, mk_Type dloc, jdg.ty)))
   
   let apply pb t = S.apply pb.defs t
   
@@ -190,16 +202,18 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
     | Const (l,md,id) -> M.return { ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
     | App (f,a,args) -> infer sg ctx f >>= fun jdg_f ->
         check_app sg jdg_f [] [] (a::args)
-    | Pi (l,x,a,b) -> (* NB: this won't work in coc mode since we could also have a:Kind *)
-        check sg a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} >>= fun jdg_a ->
-        infer sg (Context.add l x jdg_a) b >>= fun jdg_b ->
+    | Pi (l,x,a,b) ->
+        infer sg ctx a >>= fun jdg_a ->
+        M.add sg l x jdg_a >>= fun ctx2 ->
+        infer sg ctx2 b >>= fun jdg_b ->
         M.unify_sort sg ctx jdg_b.ty >>= fun b -> if b
           then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
           else raise (TypingError
                          (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
-    | Lam  (l,x,Some a,b) -> (* same problem as with Pi *)
-        check sg a {ctx=ctx; te=mk_Type dloc; ty=mk_Kind;} >>= fun jdg_a ->
-        infer sg (Context.add l x jdg_a) b >>= fun jdg_b ->
+    | Lam  (l,x,Some a,b) ->
+        infer sg ctx a >>= fun jdg_a ->
+        M.add sg l x jdg_a >>= fun ctx2 ->
+        infer sg ctx2 b >>= fun jdg_b ->
           ( match jdg_b.ty with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
               | Kind -> raise (TypingError
                                  (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx)))

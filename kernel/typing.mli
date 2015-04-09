@@ -34,6 +34,11 @@ type judgment = Context.t judgment0
 
 (** {2 Meta aware operations} *)
 
+type candidate =
+  | CTerm of term
+  | CType
+  | CSort
+
 module type Meta = sig
   type 'a t
   
@@ -44,10 +49,9 @@ module type Meta = sig
   
   val whnf : Signature.t -> term -> term t
   
-  val unify : Signature.t -> Context.t -> term -> term -> bool t
-  val unify_sort : Signature.t -> Context.t -> term -> bool t
-  val new_sort : Context.t -> loc -> ident -> term t
-  val new_meta : Context.t -> loc -> ident -> term -> judgment t
+  val unify : Signature.t -> Context.t -> term -> candidate -> bool t
+  (** [unify sg ctx t c] tries to unify t and c. It may add unsolved constraints to the problem. *)
+  val new_meta : Context.t -> loc -> ident -> candidate -> term t
   
   val eval : term t -> term
   val evalj : judgment t -> judgment

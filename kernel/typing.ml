@@ -323,7 +323,15 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         | _ -> raise (TypingError (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
         end
 
-  and check_subst sg ctx ts ctx0 = failwith "TODO: check_subst"
+  and check_subst sg ctx ts ctx0 =
+    let rec aux sigma rho delta = match rho, delta with
+      | [], [] -> M.return sigma
+      | (x,te)::rho0, (_,_,ty0)::delta0 -> let ty = subst_l (List.map snd sigma) 0 ty0 in
+          check sg te {ctx=ctx; te=ty; ty=mk_Type dloc;} >>= fun jdg ->
+          aux ((x,jdg.te)::sigma) rho0 delta0
+      | _, _ -> assert false
+      in
+    aux [] (List.rev ts) (List.rev (Context.to_context ctx0))
   
 end
 

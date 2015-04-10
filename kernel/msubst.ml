@@ -17,7 +17,7 @@ module S = struct
   let meta_val (sigma:t) : term -> term option = function
     | Meta (_,_,n,ts) -> begin
       try let te0 = IntMap.find n sigma in
-        let subst1 = List.rev_map snd ts in Some (subst_l subst1 0 te0)
+        let subst1 = List.map snd ts in Some (subst_l subst1 0 te0)
       with | Not_found -> None
       end
     | _ -> None

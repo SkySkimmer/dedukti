@@ -14,6 +14,7 @@ type term = private
   | Pi    of loc*ident*term*term        (** Pi abstraction *)
   | Hole  of loc*ident                  (** Raw placeholder *)
   | Meta  of loc*ident*int*(ident*term) list    (** Metavariable *)
+(** The list attached to metavariables is in increasing DeBruijn order *)
 
 val get_loc : term -> loc
 

@@ -17,7 +17,7 @@ module S = struct
   let meta_val (sigma:t) : term -> term option = function
     | Meta (_,_,n,ts) -> begin
       try let te0 = IntMap.find n sigma in
-        let subst1 = List.rev ts in Some (subst_l subst1 0 te0)
+        let subst1 = List.rev_map snd ts in Some (subst_l subst1 0 te0)
       with | Not_found -> None
       end
     | _ -> None
@@ -30,7 +30,7 @@ module S = struct
     | Pi (l,x,a,b) -> mk_Pi l x (apply sigma a) (apply sigma b)
     | Meta (lc,s,n,ts) as mt -> begin match meta_val sigma mt with
         | Some mt' -> apply sigma mt'
-        | None -> mk_Meta lc s n (List.map (apply sigma) ts)
+        | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,apply sigma t) ts)
       end
 
   let rec whnf sg sigma t = match Reduction.whnf sg t with

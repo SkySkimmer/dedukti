@@ -46,6 +46,8 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
+  val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
+  
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
   val whnf : Signature.t -> term -> term t

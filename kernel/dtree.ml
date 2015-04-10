@@ -111,7 +111,7 @@ let check_nb_args (nb_args:int array) (te:term) : unit =
     | App (f,a1,args) -> List.iter (aux k) (f::a1::args)
     | Lam (_,_,None,b) -> aux (k+1) b
     | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> (aux k a;  aux (k+1) b)
-    | Meta (_,_,_,ts) -> List.iter (aux k) ts
+    | Meta (_,_,_,ts) -> List.iter (fun (_,t) -> aux k t) ts
   in
     aux 0 te
 

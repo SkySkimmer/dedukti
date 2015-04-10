@@ -84,6 +84,8 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
+  val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
+  
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
   val whnf : Signature.t -> term -> term t
@@ -102,6 +104,8 @@ module KMeta : Meta with type 'a t = 'a = struct
   
   let return x = x
   let (>>=) x f = f x
+  
+  let fold f x l = List.fold_left (fun a b -> a >>= fun a -> f a b) (return x) l
   
   let add _ = Context.add
   
@@ -145,14 +149,16 @@ module RMeta : Meta = struct
   let return x pb = (x,pb)
   let (>>=) x f pb = let (x',pb') = x pb in f x' pb'
   
+  let fold f x l = List.fold_left (fun a b -> a >>= fun a -> f a b) (return x) l
+  
   let empty = { cpt=0; decls=[]; defs=S.identity; }
   
   let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list " ; " pp_metainfo) pb.decls S.pp pb.defs
     
   let whnf sg t pb = (S.whnf sg pb.defs t,pb)
   
-  let new_meta ctx l s c pb = let len = List.length (Context.to_context ctx) in
-    let mj = mk_Meta l s pb.cpt (List.map (mk_DB dloc Basics.empty) (revseq (len-1) 0)) in
+  let new_meta ctx l s c pb = let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) (Context.to_context ctx) in
+    let mj = mk_Meta l s pb.cpt substj in
     match c with
       | CTerm ty -> 
             (mj,{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;})
@@ -191,7 +197,7 @@ module RMeta : Meta = struct
     let rec aux ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
       if Reduction.are_convertible sg t1' t2'
         then return true
-        else begin (*Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb;*)
+        else begin (*(fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->*)
         match t1', t2' with
           | Meta (_,_,n,ts), _ -> set_meta n t2' >>= fun () -> return true
           | _, Meta (_,_,n,ts) -> set_meta n t1' >>= fun () -> return true
@@ -268,7 +274,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         M.return {ctx=ctx; te=mj; ty=mk;}
     | Meta (lc,s,n,ts) as mv -> M.meta_constraint mv >>= fun (ctx0,ty0) ->
         check_subst sg ctx ts ctx0 >>= fun ts' ->
-        M.return {ctx=ctx; te=mk_Meta lc s n ts'; ty=subst_l ts' 0 ty0;} (* maybe subst_l (List.rev ts') ... *)
+        M.return {ctx=ctx; te=mk_Meta lc s n ts'; ty=subst_l (List.map snd ts') 0 ty0;}
 
   and check sg (te:term) (jty:judgment) : judgment t =
     let ty_exp = jty.te in

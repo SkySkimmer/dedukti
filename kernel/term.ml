@@ -11,7 +11,7 @@ type term =
   | Lam   of loc*ident*term option*term (* Lambda abstraction *)
   | Pi    of loc*ident*term*term        (* Pi abstraction *)
   | Hole  of loc*ident                  (* Raw placeholder *)
-  | Meta  of loc*ident*int*term list    (* Metavariable *)
+  | Meta  of loc*ident*int*(ident*term) list    (* Metavariable *)
 
 
 type context = ( loc * ident * term ) list
@@ -47,7 +47,8 @@ let rec term_eq t1 t2 =
           with _ -> false )
     | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq b b'
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
-    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && (try List.for_all2 term_eq ts ts' with | Invalid_argument _ -> false)
+    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
+                                                     with | Invalid_argument _ -> false)
     | _, _  -> false
 
 let rec pp_term out = function
@@ -61,8 +62,8 @@ let rec pp_term out = function
   | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x pp_term_wp a pp_term b
   | Hole (_,s) when ident_eq s empty -> Printf.fprintf out "?"
   | Hole (_,s)         -> Printf.fprintf out "?{\"%a\"}" pp_ident s
-  | Meta (_,s,n,ts) when ident_eq s empty -> Printf.fprintf out "?_%i[%a]" n (pp_list ";" pp_term) ts
-  | Meta (_,s,n,ts)    -> Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" pp_term) ts
+  | Meta (_,s,n,ts) when ident_eq s empty -> Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+  | Meta (_,s,n,ts)    -> Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
 
 and pp_term_wp out = function
   | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> pp_term out t

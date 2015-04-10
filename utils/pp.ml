@@ -74,8 +74,8 @@ let rec print_term out = function
       Format.fprintf out "@[%a:%a ->@ @[%a@]@]" print_ident x print_term_wp a print_term b
   | Hole (_,s) when ident_eq s empty -> Format.pp_print_string out "?"
   | Hole (_,s)         -> Format.fprintf out "?{\"%a\"}" print_ident s
-  | Meta (_,s,n,ts) when ident_eq s empty -> Format.fprintf out "?_%i[%a]" n (print_list ";" print_term) ts
-  | Meta (_,s,n,ts)    -> Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" print_term) ts
+  | Meta (_,s,n,ts) when ident_eq s empty -> Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+  | Meta (_,s,n,ts)    -> Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
 
 and print_term_wp out = function
   | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> print_term out t

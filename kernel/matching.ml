@@ -19,7 +19,7 @@ let permute (dbs:int LList.t) (te:term) : term =
     | Lam (l,x,a,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi  dloc x (aux k a) (aux (k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (aux k) ts)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,aux k t) ts)
   in aux 0 te
 
 

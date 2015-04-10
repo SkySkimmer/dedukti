@@ -7,7 +7,7 @@ let rec shift_rec (r:int) (k:int) : term -> term = function
       mk_App (shift_rec r k f) (shift_rec r k a) (List.map (shift_rec r k) args )
   | Lam (_,x,_,f) -> mk_Lam dloc x None (shift_rec r (k+1) f)
   | Pi  (_,x,a,b) -> mk_Pi dloc x (shift_rec r k a) (shift_rec r (k+1) b)
-  | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (shift_rec r k) ts)
+  | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,shift_rec r k t) ts)
   | Kind | Type _ | Const _ | Hole _ as t -> t
 
 let shift r t = shift_rec r 0 t
@@ -23,7 +23,7 @@ let unshift q te =
   | Lam (l,x,None,f) -> mk_Lam l x None (aux (k+1) f)
   | Lam (l,x,Some a,f) -> mk_Lam l x (Some (aux k a)) (aux (k+1) f)
   | Pi  (l,x,a,b) -> mk_Pi l x (aux k a) (aux (k+1) b)
-  | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (aux k) ts)
+  | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (fun (x,t) -> x,aux k t) ts)
   | Type _ | Kind | Const _ | Hole _ as t -> t
   in
     aux 0 te
@@ -43,7 +43,7 @@ let rec psubst_l (args:(term Lazy.t) LList.t) (k:int) (t:term) : term =
     | App (f,a,lst)                     ->
         mk_App (psubst_l args k f) (psubst_l args k a)
           (List.map (psubst_l args k) lst)
-    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (psubst_l args k) ts)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,psubst_l args k t) ts)
 
 let subst (te:term) (u:term) =
   let rec  aux k = function
@@ -55,7 +55,7 @@ let subst (te:term) (u:term) =
     | Lam (_,x,_,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi dloc  x (aux k a) (aux(k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (aux k) ts)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,aux k t) ts)
   in aux 0 te
 
   
@@ -83,7 +83,7 @@ struct
       | Lam (l,x,Some ty,te) -> mk_Lam l x (Some (aux q ty)) (aux (q+1) te)
       | Lam (l,x,None,te) -> mk_Lam l x None (aux (q+1) te)
       | Pi (l,x,a,b) -> mk_Pi l x (aux q a) (aux (q+1) b)
-      | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (aux q) ts)
+      | Meta (l,s,n,ts) -> mk_Meta l s n (List.map (fun (x,t) -> x,aux q t) ts)
     in
       aux q te
 
@@ -96,7 +96,7 @@ struct
       | Lam (_,_,None,te) -> aux (q+1) te
       | Lam (_,_,Some ty,te) -> aux q ty || aux (q+1) te
       | Pi (_,_,a,b) -> aux q a || aux (q+1) b
-      | Meta (_,_,_,ts) -> List.exists (aux q) ts
+      | Meta (_,_,_,ts) -> List.exists (fun (_,t) -> aux q t) ts
     in aux 0 te
 
   let add (sigma:t) (x:ident) (n:int) (t:term) : t option =

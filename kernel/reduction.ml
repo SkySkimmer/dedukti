@@ -217,7 +217,7 @@ and snf sg (t:term) : term =
     | App (f,a,lst)     -> mk_App (snf sg f) (snf sg a) (List.map (snf sg) lst)
     | Pi (_,x,a,b)        -> mk_Pi dloc x (snf sg a) (snf sg b)
     | Lam (_,x,a,b)       -> mk_Lam dloc x None (snf sg b)
-    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (snf sg) ts)
+    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,snf sg t) ts)
 
 and are_convertible_lst sg : (term*term) list -> bool = function
   | [] -> true

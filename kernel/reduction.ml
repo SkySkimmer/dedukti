@@ -227,13 +227,14 @@ and are_convertible_lst sg : (term*term) list -> bool = function
         if term_eq t1 t2 then Some lst
         else
           match whnf sg t1, whnf sg t2 with
-          | Kind, Kind | Type _, Type _ -> Some lst
+          | Kind, Kind | Type _, Type _ | Hole _, Hole _ -> Some lst
           | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> Some lst
           | DB (_,_,n), DB (_,_,n') when ( n==n' ) -> Some lst
           | App (f,a,args), App (f',a',args') ->
             add_to_list2 args args' ((f,f')::(a,a')::lst)
           | Lam (_,_,_,b), Lam (_,_,_,b') -> Some ((b,b')::lst)
           | Pi (_,_,a,b), Pi (_,_,a',b') -> Some ((a,a')::(b,b')::lst)
+          | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> add_to_list2 (List.map snd ts) (List.map snd ts') lst
           | t1, t2 -> None
       ) with
       | None -> false

@@ -279,7 +279,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
               | _ -> M.return { ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
-    | Lam  (l,x,None,b) -> raise (TypingError (DomainFreeLambda l)) (* TODO: make a meta ?_j : Type to annotate (?) *)
+    | Lam  (l,x,None,b) -> infer sg ctx (mk_Lam l x (Some (mk_Hole l x)) b)
     | Hole (lc,s) ->
         M.new_meta ctx lc s CType >>= fun mk ->
         M.new_meta ctx lc s (CTerm mk) >>= fun mj ->

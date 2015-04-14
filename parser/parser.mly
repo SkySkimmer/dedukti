@@ -190,7 +190,7 @@ term            : sterm+
                 | term ARROW term
                 { PrePi (preterm_loc $1,None,$1,$3) }
                 | ID FATARROW term
-                { PreLam (fst $1,snd $1,None,$3) }
+                { PreLam (fst $1,snd $1,Some(PreMeta(fst $1, snd $1)),$3) }
                 | ID COLON sterm+ FATARROW term
                 { PreLam (fst $1,snd $1,Some(mk_pre_from_list $3),$5) }
 %%

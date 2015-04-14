@@ -165,7 +165,19 @@ module RMeta : Meta = struct
       | CType -> (mj,{cpt=pb.cpt+1; decls=(MetaType (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
       | CSort -> (mj,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
   
-  let set_meta n t pb = (),{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t}
+  let rec accessible n pb = function
+    | Kind | Type _ | DB _ | Const _ | Hole _ -> false
+    | App (f,a,args) -> List.exists (accessible n pb) (f::a::args)
+    | Lam (_,_,None,u) -> accessible n pb u
+    | Lam (_,_,Some a,u) -> accessible n pb a || accessible n pb u
+    | Pi (_,_,a,b) -> accessible n pb a || accessible n pb b
+    | Meta (_,_,m,ts) -> (n==m) || List.exists (fun (_,x) -> accessible n pb x) ts || ( match S.meta_raw pb.defs m with
+        | Some t -> accessible n pb t
+        | None -> false)
+
+  let set_meta n t pb = if accessible n pb t
+    then false,pb
+    else true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t}
   
   let set_decl d pb = let n = match d with | MetaDecl (_,n,_) | MetaType (_,n) | MetaSort (_,n) -> n in
     let rec aux s = function
@@ -189,7 +201,7 @@ module RMeta : Meta = struct
         | MetaType (ctx,_) -> new_meta ctx l s CSort >>= fun mk ->
             set_decl (MetaDecl (ctx,n,mk)) >>= fun () -> return (ctx,mk)
         | MetaSort (ctx,_) -> set_decl (MetaDecl (ctx,n,mk_Kind)) >>= fun () ->
-            set_meta n (mk_Type l) >>= fun () -> return (ctx,mk_Kind)
+            set_meta n (mk_Type l) >>= fun _ -> return (ctx,mk_Kind)
         end
     | _ -> assert false
   
@@ -199,8 +211,8 @@ module RMeta : Meta = struct
         then return true
         else begin (*(fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->*)
         match t1', t2' with
-          | Meta (_,_,n,ts), _ -> set_meta n t2' >>= fun () -> return true
-          | _, Meta (_,_,n,ts) -> set_meta n t1' >>= fun () -> return true
+          | Meta (_,_,n,ts), _ -> set_meta n t2'
+          | _, Meta (_,_,n,ts) -> set_meta n t1'
           | Pi (l,x,a1,b1), Pi(_,_,a2,b2) -> aux ctx a1 a2 >>= fun b -> if b
             then aux (Context.unsafe_add ctx l x a1) b1 b2
             else return false

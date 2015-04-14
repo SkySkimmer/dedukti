@@ -14,6 +14,8 @@ module S = struct
 
   let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
 
+  let meta_raw (sigma:t) n = try Some (IntMap.find n sigma) with | Not_found -> None
+
   let meta_val (sigma:t) : term -> term option = function
     | Meta (_,_,n,ts) -> begin
       try let te0 = IntMap.find n sigma in

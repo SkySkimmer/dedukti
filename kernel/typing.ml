@@ -153,7 +153,7 @@ module RMeta : Meta = struct
   
   let empty = { cpt=0; decls=[]; defs=S.identity; }
   
-  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list " ; " pp_metainfo) pb.decls S.pp pb.defs
+  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list "\n" pp_metainfo) pb.decls S.pp pb.defs
     
   let whnf sg t pb = (S.whnf sg pb.defs t,pb)
   

@@ -50,6 +50,6 @@ module S = struct
   
   let pp out sigma =
     IntMap.iter
-      (fun i t -> Printf.fprintf out "( ?_%i -> %a )" i pp_term t)
+      (fun i t -> Printf.fprintf out "( ?_%i |-> %a )" i pp_term t)
       sigma
 end

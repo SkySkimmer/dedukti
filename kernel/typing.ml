@@ -330,7 +330,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
 		      then let subst1 = jdg_u.te::subst_pre in
 		           let mk1 = subst_l subst1 0 mk in
 		             check_app sg {ctx=ctx; te=mk_App jdg_f.te jdg_u.te []; ty=mk1;} (jdg_u.te::consumed_te) (jdg_u.ty::consumed_ty) atl
-		      else raise (TypingError (ProductExpected (jdg_f.te, Context.to_context ctx, jdg_f.ty)))
+		      else raise (TypingError (ConvertibilityError (jdg_f.te, Context.to_context ctx, jdg_f.ty, mk_Pi dloc empty jdg_u.ty mk0)))
 		    end
         | _ -> raise (TypingError (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
         end

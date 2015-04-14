@@ -1,0 +1,245 @@
+#NAME univalence.
+
+type : Type.
+`U : type -> Type.
+
+(; to be able to compare types ;)
+type_t : type.
+[] U type_t --> type.
+
+(; compare functions ;)
+forall : A : type -> B : (U A -> type) -> type.
+[A : type, B : (U A -> type)] U (forall A B) --> a : U A -> U (B a).
+
+fun (A : type) (B : type) : type := forall A (a : U A => B).
+
+eq : A : type -> U A -> U A -> type.
+
+eq_refl : A : type -> a : U A -> U (eq A a a).
+
+`eq_rect : A : type -> a : U A -> P : (b : U A -> e : U (eq A a b) -> type) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
+
+[A : type, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
+
+transport (A : type) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
+ := eq_rect A x (a : U A => p : U (eq A x a) => P a) H y e.
+
+eq_inverse (A : type) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)
+ := transport A (a : U A => eq A a x) x y p (eq_refl A x).
+
+ap (A : type) (B : type) (f : U (fun A B)) (x : U A) : y : U A -> p : U (eq A x y) -> U (eq B (f x) (f y))
+ := eq_rect A x (y : U A => p : U (eq A x y) => eq B (f x) (f y)) (eq_refl B (f x)).
+
+transport_const (A : type) (B : type) (x1 : U A) (x2 : U A) (p : U (eq A x1 x2)) (y : U B)
+ : U (eq B (transport A (x : U A => B) x1 x2 p y) y)
+ := eq_rect A x1 (x2 : U A => p : U (eq A x1 x2) => eq B (transport A (x : U A => B) x1 x2 p y) y) (eq_refl B y) x2 p.
+
+test001 (A : type) (P : U A -> type) (x : U A) (H : U (P x)) : U (eq (P x) H (transport A P x x (eq_refl A x) H))
+ := eq_refl (P x) H.
+
+
+sigT : A : type -> P : (U A -> type) -> type.
+
+existT : A : type -> P : (U A -> type) -> x : U A -> H : U (P x) -> U (sigT A P).
+
+`sigT_rect : A : type -> P : (U A -> type) -> Q : (U (sigT A P) -> type) ->
+  (x : U A -> p : U (P x) -> U (Q (existT A P x p))) -> s : U (sigT A P) -> U (Q s).
+
+[A : type, P : (U A -> type), Q : (U (sigT A P) -> type), H : (x : U A -> p : U (P x) -> U (Q (existT A P x p))), x : U A, p : U (P x)]
+  sigT_rect A P Q H (existT A P x p) --> H x p.
+
+pr1 (A : type) (P : (U A -> type)) (s : U (sigT A P)) : U A
+ := sigT_rect A P (s : U (sigT A P) => A) (x : U A => p : U (P x) => x) s.
+
+pr2 (A : type) (P : (U A -> type)) (s : U (sigT A P)) : U (P (pr1 A P s))
+ := sigT_rect A P (s : U (sigT A P) => P (pr1 A P s)) (x : U A => p : U (P x) => p) s. 
+
+sigT_eta (A : type) (P : (U A -> type)) : s : U (sigT A P) -> U (eq (sigT A P) (existT A P (pr1 A P s) (pr2 A P s)) s)
+ := sigT_rect A P (s : U (sigT A P) => eq (sigT A P) (existT A P (pr1 A P s) (pr2 A P s)) s)
+              (x : U A => p : U (P x) => eq_refl (sigT A P) (existT A P x p)).
+
+(;
+[A : type, P : U A -> type, s : U (sigT A P)] existT A P (pr1 _ _ s) (pr2 _ _ s) --> s.
+
+test002 (A : type) (P : (U A -> type)) (s : U (sigT A P)) : U (eq (sigT A P) (existT A P (pr1 A P s) (pr2 A P s)) s)
+ := eq_refl (sigT A P) s.
+;)
+
+
+
+(;;;;;;;; SMALL TEST ;;;;;;;;;;;)
+(;
+nonempty : type -> type.
+nonempty_ex : A : type -> U A -> U (nonempty A).
+
+nonempty_rect : A : type -> P : (a : U (nonempty A) -> type) -> H : (a : U A -> U (P (nonempty_ex A a))) -> a : U (nonempty A) -> U (P a).
+
+[A : type, P : U (nonempty A) -> type, H : (a : U A -> U (P (nonempty_ex A a))), a : U A]
+  nonempty_rect A P H (nonempty_ex A a) --> H a.
+
+nonempty_back (A : type) (a : U (nonempty A)) : U A := nonempty_rect A (a : U (nonempty A) => A) (a : U A => a) a.
+
+
+nonempty_eta : A : type -> a : U (nonempty A) -> U (eq (nonempty A) (nonempty_ex A (nonempty_back A a)) a)
+ := A : type => nonempty_rect A (a : U (nonempty A) => eq (nonempty A) (nonempty_ex A (nonempty_back A a)) a)
+         (a : U A => eq_refl (nonempty A) (nonempty_ex A a)).
+
+[A : type, a : U (nonempty A)] nonempty_ex A (nonempty_back A a) --> a.
+
+
+test003 : A : type -> a : U (nonempty A) -> U (eq (nonempty A) (nonempty_ex A (nonempty_back A a)) a)
+ := A : type => a : U (nonempty A) => eq_refl (nonempty A) a.
+
+;)
+
+
+law (A : type) : type := fun A (fun A A).
+
+magma : type := sigT type_t law.
+
+
+
+
+(;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; UNIVALENCE ;;;;;;;;;;;;;;;;;;;;;;;;)
+
+iso : A : type -> B : type -> type.
+
+`iso_f : A : type -> B : type -> e : U (iso A B) -> U (fun A B).
+`iso_g : A : type -> B : type -> e : U (iso A B) -> U (fun B A).
+
+`iso_Hf : A : type -> B : type -> e : U (iso A B) -> U (forall A (a : U A => eq A (iso_g A B e (iso_f A B e a)) a)).
+`iso_Hg : A : type -> B : type -> e : U (iso A B) -> U (forall B (b : U B => eq B (iso_f A B e (iso_g A B e b)) b)).
+
+is_iso : A : type -> B : type -> f : U (fun A B) -> g : U (fun B A)
+ -> Hf : U (forall A (a : U A => eq A (g (f a)) a)) -> Hg : U (forall B (b : U B => eq B (f (g b)) b))
+ -> U (iso A B).
+
+[A : type, B : type, f : U (fun A B), g : U (fun B A), Hf : U (forall A (a : U A => eq A (g (f a)) a)), Hg : U (forall B (b : U B => eq B (f (g b)) b))]
+  iso_f A B (is_iso A B f g Hf Hg) --> f.
+
+[A : type, B : type, f : U (fun A B), g : U (fun B A), Hf : U (forall A (a : U A => eq A (g (f a)) a)), Hg : U (forall B (b : U B => eq B (f (g b)) b))]
+  iso_g A B (is_iso A B f g Hf Hg) --> g.
+
+[A : type, B : type, f : U (fun A B), g : U (fun B A), Hf : U (forall A (a : U A => eq A (g (f a)) a)), Hg : U (forall B (b : U B => eq B (f (g b)) b))]
+  iso_Hf A B (is_iso A B f g Hf Hg) --> Hf.
+
+[A : type, B : type, f : U (fun A B), g : U (fun B A), Hf : U (forall A (a : U A => eq A (g (f a)) a)), Hg : U (forall B (b : U B => eq B (f (g b)) b))]
+  iso_Hg A B (is_iso A B f g Hf Hg) --> Hg.
+
+id (A : type) : U (fun A A) := a : U A => a.
+
+id_iso (A : type) : U (iso A A) := is_iso A A (id A) (id A) (a : U A => eq_refl A a) (a : U A => eq_refl A a).
+
+equiv_iso (A : type) (B : type) (e : U (eq type_t A B)) : U (iso A B)
+ := transport type_t (X : type => iso A X) A B e (id_iso A).
+
+ap_idmap (A : type) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq (eq A x y) (ap A A (id A) x y p) p)
+ := eq_rect A x (y : U A => p : U (eq A x y) => eq (eq A x y) (ap A A (id A) x y p) p) (eq_refl (eq A x x) (eq_refl A x)) y p.
+
+
+(;;;;;;;;;;;;;;;;;;;; THE AXIOM ;;;;;;;;;;;;;;;;;;;;)
+
+Univalence : A : type -> B : type -> U (iso (eq type_t A B) (iso A B)).
+
+[A : type, B : type] iso_f (eq type_t A B) (iso A B) (Univalence A B) --> equiv_iso A B.
+
+
+Univalence_f_pr (A : type) (B : type) : U (eq (fun (eq type_t A B) (iso A B)) (iso_f (eq type_t A B) (iso A B) (Univalence A B)) (equiv_iso A B))
+ := eq_refl (fun (eq type_t A B) (iso A B)) (equiv_iso A B).
+
+iso_equiv (A : type) (B : type) (e : U (iso A B)) : U (eq type_t A B)
+ := iso_g (eq type_t A B) (iso A B) (Univalence A B) e.
+
+iso_rect_aux (A : type) (B : type) (P : U (iso A B) -> type) (H : U (forall (eq type_t A B) (e : U (eq type_t A B) => P (equiv_iso A B e))))
+ (e : U (iso A B)) : U (P e)
+  := transport (iso A B) P (equiv_iso A B (iso_equiv A B e)) e (iso_Hg (eq type_t A B) (iso A B) (Univalence A B) e)
+  (H (iso_equiv A B e)).
+
+iso_univ_rect (P : (A : type -> B : type -> U (iso A B) -> type)) (H : U (forall type_t (A : type => P A A (id_iso A))))
+  (A : type) (B : type) (e : U (iso A B)) : U (P A B e)
+  := iso_rect_aux A B (P A B)
+   (e : U (eq type_t A B) => eq_rect type_t A (B : type => e : U (eq type_t A B) => P A B (equiv_iso A B e)) (H A) B e) e.
+
+
+iso_equiv_id (A : type) : U (eq (eq type_t A A) (eq_refl type_t A) (iso_equiv A A (id_iso A)))
+ := eq_inverse (eq type_t A A) (iso_equiv A A (id_iso A)) (eq_refl type_t A)
+       (iso_Hf (eq type_t A A) (iso A A) (Univalence A A) (eq_refl type_t A)).
+
+(; [A : type] iso_g (eq type_t A A) (iso A A) (Univalence A A) (id_iso A) --> eq_refl type_t A. ;)
+
+transport_fun_u : A : type -> B : type -> e : U (iso A B) -> C : U (fun type_t type_t) -> D : U (fun type_t type_t) -> f : U (fun (C A) (D A))
+ -> x : U (C A) -> U (eq (D B)
+  (transport type_t (T : type => fun (C T) (D T)) A B (iso_equiv A B e) f (transport type_t C A B (iso_equiv A B e) x))
+  (transport type_t D A B (iso_equiv A B e) (f x)))
+ := iso_univ_rect
+  (A : type => B : type => e : U (iso A B) =>
+   forall (fun type_t type_t) (C : (type -> type) => forall (fun type_t type_t) (D : (type -> type) => forall (fun (C A) (D A)) (f : ((U (C A)) -> (U (D A))) => forall (C A) (x : U (C A) =>
+   (eq (D B) (transport type_t (T : type => fun (C T) (D T)) A B (iso_equiv A B e) f
+     (transport type_t C A B (iso_equiv A B e) x)) (transport type_t D A B (iso_equiv A B e) (f x))))))))
+  (A : type => C : (type -> type) => D : (type -> type) => f : U (fun (C A) (D A)) => x : U (C A) =>
+   transport (eq type_t A A)
+     (p : U (eq type_t A A) =>
+      eq (D A) (transport type_t (T : type => fun (C T) (D T)) A A p f
+        (transport type_t C A A p x)) (transport type_t D A A p (f x))) (eq_refl type_t A)
+     (iso_equiv A A (id_iso A)) (iso_equiv_id A) (eq_refl (D A) (f x))).
+
+
+funext : A : type -> B : (U A -> type) ->  f : U (forall A B) -> g : U (forall A B) -> H : U (forall A (x : U A => eq (B x) (f x) (g x))) ->
+ U (eq (forall A B) f g).
+
+
+pr (G : type) : type := forall G (x : U G => eq G x x).
+
+pr_e : U (forall type_t (A : type => forall type_t (B : type => forall (iso A B) (e : U (iso A B) => fun (pr A) (pr B)))))
+ := A : type => B : type => iso_rect_aux A B (e : U (iso A B) => fun (pr A) (pr B))
+   (eq_rect type_t A (B : type => e : U (eq type_t A B) => fun (pr A) (pr B)) (id (pr A)) B).
+
+
+pr_e' : U (forall type_t (A : type => forall type_t (B : type => forall (iso A B) (e : U (iso A B) => fun (pr A) (pr B)))))
+ := A : type => B : type => e : U (iso A B) => H : U (pr A) => x : U B =>
+   transport B (b : U B => eq B b b) (iso_f A B e (iso_g A B e x)) x (iso_Hg A B e x) (ap A B (iso_f A B e) (iso_g A B e x) (iso_g A B e x) (H (iso_g A B e x))).
+
+pr_eq_aux : A : type -> B : type -> e : U (iso A B) -> U (eq (fun (pr A) (pr B)) (pr_e A B e) (pr_e' A B e))
+:= iso_univ_rect (A : type => B : type => e : U (iso A B) => eq (fun (pr A) (pr B)) (pr_e A B e) (pr_e' A B e))
+           (A : type => funext (pr A) (H : U (pr A) => pr A)
+              (pr_e A A (id_iso A))
+              (pr_e' A A (id_iso A))
+              (H : U (pr A) =>
+               transport (eq type_t A A)
+                 (p : U (eq type_t A A) =>
+                  eq (pr A) (transport (iso A A) (e : U (iso A A) => fun (pr A) (pr A))
+                    (equiv_iso A A (iso_equiv A A (id_iso A))) (id_iso A)
+                    (iso_Hg (eq type_t A A) (iso A A) (Univalence A A) (id_iso A))
+                    (eq_rect type_t A
+                       (B : type => p : U (eq type_t A B) => fun (pr A) (pr B)) (id (pr A)) A p) H)
+                  (pr_e' A A (id_iso A) H)) (eq_refl type_t A)  (iso_equiv A A (id_iso A))
+                 (iso_equiv_id A)
+                 ((X : U (eq (fun (pr A) (pr A)) (transport (iso A A) (e : U (iso A A) => fun (pr A) (pr A))
+                      (equiv_iso A A (iso_equiv A A (id_iso A)))
+                      (id_iso A) (iso_Hg (eq type_t A A) (iso A A) (Univalence A A) (id_iso A)) (id (pr A))) (id (pr A))) =>
+                   transport (fun (pr A) (pr A))
+                     (p0 : U (fun (pr A) (pr A)) =>
+                      eq (pr A) (p0 H) (x : U A => ap A A (id A) x x (H x))) (id (pr A))
+                      (transport (iso A A) (e : U (iso A A) => fun (pr A) (pr A))
+                      (equiv_iso A A (iso_equiv A A (id_iso A)))
+                      (id_iso A) (iso_Hg (eq type_t A A) (iso A A) (Univalence A A) (id_iso A)) (id (pr A)))
+                     (eq_inverse (fun (pr A) (pr A)) (transport (iso A A) (e : U (iso A A) => fun (pr A) (pr A))
+                      (equiv_iso A A (iso_equiv A A (id_iso A)))
+                      (id_iso A) (iso_Hg (eq type_t A A) (iso A A) (Univalence A A) (id_iso A)) (id (pr A))) (id (pr A)) X)
+                     (eq_inverse (pr A) (x : U A => ap A A (id A) x x (H x)) H
+                        (funext A (x : U A => eq A x x)
+                        (x : U A => ap A A (id A) x x (H x)) H
+                        (x : U A => ap_idmap A x x (H x)))))
+                    (transport_const (iso A A) (fun (pr A) (pr A))
+                       (equiv_iso A A (iso_equiv A A (id_iso A)))
+                       (id_iso A) (iso_Hg (eq type_t A A) (iso A A) (Univalence A A) (id_iso A)) (id (pr A)))))).
+
+pr_eq : U (eq (forall type_t (A : type => forall type_t (B : type => forall (iso A B) (e:(U (iso A B)) => fun (pr A) (pr B))))) pr_e pr_e')
+:= funext type_t (x : type => forall type_t (y : type => fun (iso x y) (fun (pr x) (pr y)))) pr_e pr_e'
+  (A : type =>
+   funext type_t (x : type => fun (iso A x) (fun (pr A) (pr x))) (pr_e A) (pr_e' A)
+     (B : type =>
+      funext (iso A B) (e : U (iso A B) => (fun (pr A) (pr B))) (pr_e A B) (pr_e' A B)
+        (pr_eq_aux A B))).
+
+

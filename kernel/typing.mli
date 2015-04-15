@@ -50,7 +50,7 @@ module type Meta = sig
   
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
-  val whnf : Signature.t -> term -> term t
+  val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
   val unify : Signature.t -> Context.t -> term -> candidate -> bool t
   (** [unify sg ctx t c] tries to unify t and c. It may add unsolved constraints to the problem. *)

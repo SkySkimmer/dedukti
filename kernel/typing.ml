@@ -88,7 +88,7 @@ module type Meta = sig
   
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
   
-  val whnf : Signature.t -> term -> term t
+  val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
   val unify : Signature.t -> Context.t -> term -> candidate -> bool t
   val new_meta : Context.t -> loc -> ident -> candidate -> term t
@@ -117,7 +117,9 @@ module KMeta : Meta with type 'a t = 'a = struct
         | _ -> false
         end
   
-  let whnf = Reduction.whnf
+  let pi sg ctx t = match Reduction.whnf sg t with
+    | Pi (l,x,a,b) -> Some (l,x,a,b)
+    | _ -> None
     
   let new_meta ctx l s _ = raise (TypingError (MetaInKernel (l,s)))
   
@@ -154,7 +156,7 @@ module RMeta : Meta = struct
   let empty = { cpt=0; decls=[]; defs=S.identity; }
   
   let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list "\n" pp_metainfo) pb.decls S.pp pb.defs
-    
+  
   let whnf sg t pb = (S.whnf sg pb.defs t,pb)
   
   let new_meta ctx l s c pb = let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) (Context.to_context ctx) in
@@ -164,7 +166,7 @@ module RMeta : Meta = struct
             (mj,{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;})
       | CType -> (mj,{cpt=pb.cpt+1; decls=(MetaType (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
       | CSort -> (mj,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
-  
+
   let rec accessible n pb = function
     | Kind | Type _ | DB _ | Const _ | Hole _ -> false
     | App (f,a,args) -> List.exists (accessible n pb) (f::a::args)
@@ -231,6 +233,21 @@ module RMeta : Meta = struct
     else raise (TypingError (ConvertibilityError
                                    (jdg.te, Context.to_context jdg.ctx, mk_Type dloc, jdg.ty)))
   
+  let pi sg ctx t = whnf sg t >>= function
+    | Pi (l,x,a,b) -> return (Some (l,x,a,b))
+    | Meta _ | App (Meta _, _, _) -> let empty = Basics.empty in
+        new_meta ctx dloc empty CSort >>= fun ms -> (* if !coc may be Kind *)
+        new_meta ctx dloc empty (CTerm ms) >>= fun mt ->
+        add sg dloc empty {ctx=ctx; te=mt; ty=ms;} >>= fun ctx2 ->
+        new_meta ctx2 dloc empty CSort >>= fun ml ->
+        new_meta ctx2 dloc empty (CTerm ml) >>= fun mk ->
+        let pi = mk_Pi dloc empty mt mk in
+        unify sg ctx t (CTerm pi) >>= begin function
+        | true -> return (Some (dloc,empty,mt,mk))
+        | false -> return None
+        end
+    | _ -> return None
+  
   let apply pb t = S.apply pb.defs t
   
   let eval t = let (t',pb) = t empty in
@@ -293,13 +310,13 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
     let ctx = jty.ctx in
       match te with (* Maybe do the match on term and type at the same time? In case type is a meta. *)
         | Lam (l,x,None,u) ->
-            ( M.whnf sg ty_exp >>= function (* If this was a meta we might be able to do something. *)
-                | Pi (_,_,a,b) as pi ->
+            ( M.pi sg ctx ty_exp >>= function
+                | Some (l,x,a,b) -> let pi = mk_Pi l x a b in
                     let ctx2 = Context.unsafe_add ctx l x a in
                     (* (x) might as well be Kind but here we do not care*)
                     check sg u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } >>= fun jdg_b ->
                       M.return { ctx=ctx; te=mk_Lam l x None jdg_b.te; ty=pi; }
-                | _ -> raise (TypingError
+                | None -> raise (TypingError
                                 (ProductExpected (te,Context.to_context jty.ctx,jty.te)))
             )
         | _ ->
@@ -312,27 +329,10 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
   and check_app sg jdg_f consumed_te consumed_ty args = 
     match args with
       | [] -> M.return jdg_f
-      | u::atl -> begin M.whnf sg jdg_f.ty >>= function
-        | Pi (_,_,a,b) -> check sg u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} >>= fun u_inf ->
+      | u::atl -> begin M.pi sg jdg_f.ctx jdg_f.ty >>= function
+        | Some (_,_,a,b) -> check sg u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} >>= fun u_inf ->
             check_app sg {ctx=jdg_f.ctx; te=mk_App jdg_f.te u_inf.te []; ty=Subst.subst b u_inf.te;} (u_inf.te::consumed_te) (a::consumed_ty) atl
-        | Meta _ | App (Meta _, _, _) -> let ctx = jdg_f.ctx in
-         (* We could also have this case as default and fail on the unify step. Maybe. *)
-            let ctxlen = List.length (Context.to_context ctx) in let rlen = List.length consumed_te in
-		    infer sg ctx u >>= fun jdg_u ->
-		    let ctx0 = List.fold_right (fun ty ctx0 -> Context.add dloc empty {ctx=ctx0; te=ty; ty=mk_Type dloc;}) (jdg_u.ty::consumed_ty) ctx in
-		    M.new_meta ctx0 dloc empty CSort >>= fun ml ->
-		    M.new_meta ctx0 dloc empty (CTerm ml) >>= fun mk -> (* mk : s new meta in u_inf::consumed_ty ++ ctx *)
-		    let subst_pre = List.append consumed_te (List.rev_map (mk_DB dloc empty) (revseq (1+rlen) (rlen+ctxlen))) in
-		     (* variables in ctx need to be kept the same, but Subst.psubst_l would modify them if we didn't append a bunch of DB *)
-		    let subst0 = (mk_DB dloc empty 0)::subst_pre in
-		    let mk0 = subst_l subst0 0 mk in begin
-		    M.unify sg ctx jdg_f.ty (CTerm (mk_Pi dloc empty jdg_u.ty mk0)) >>= fun b -> if b (* ty_f === Pi ty_u mk0 *)
-		      then let subst1 = jdg_u.te::subst_pre in
-		           let mk1 = subst_l subst1 0 mk in
-		             check_app sg {ctx=ctx; te=mk_App jdg_f.te jdg_u.te []; ty=mk1;} (jdg_u.te::consumed_te) (jdg_u.ty::consumed_ty) atl
-		      else raise (TypingError (ConvertibilityError (jdg_f.te, Context.to_context ctx, jdg_f.ty, mk_Pi dloc empty jdg_u.ty mk0)))
-		    end
-        | _ -> raise (TypingError (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
+        | None -> raise (TypingError (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty)))
         end
 
   and check_subst sg ctx ts ctx0 =
@@ -448,7 +448,7 @@ let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:SS.t) (pat:pattern) : te
   | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
 
 and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : term*term*SS.t =
-  match KMeta.whnf sg ty_f with
+  match Reduction.whnf sg ty_f with
     | Pi (_,_,a,b) ->
         let sigma = check_pattern sg ctx q a sigma0 arg in
         let arg' = pattern_to_term arg in
@@ -461,7 +461,7 @@ and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pa
   match pat with
   | Lambda (l,x,p) ->
       begin
-        match KMeta.whnf sg exp_ty with
+        match Reduction.whnf sg exp_ty with
           | Pi (l,x,a,b) ->
               let ctx2 = Context.unsafe_add ctx l x a in
                 check_pattern sg ctx2 (q+1) b sigma0 p

@@ -82,7 +82,7 @@ end
 
 module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t
 
-module KRefine : RefinerS with type 'a t = 'a KMeta.t
+module KRefine : RefinerS with type 'a t = 'a
 
 module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
 

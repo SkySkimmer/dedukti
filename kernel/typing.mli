@@ -57,6 +57,8 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> candidate -> term t
   
   val meta_constraint : term -> (Context.t * term) t
+  
+  val simpl : term -> term t
 end
 
 module KMeta : Meta with type 'a t = 'a

@@ -163,6 +163,8 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> candidate -> term t
   
   val meta_constraint : term -> (Context.t * term) t
+  
+  val simpl : term -> term t
 end
 
 module KMeta : Meta with type 'a t = 'a = struct
@@ -192,7 +194,8 @@ module KMeta : Meta with type 'a t = 'a = struct
   let meta_constraint = function
     | Meta (l,s,_,_) -> raise (TypingError (MetaInKernel (l,s)))
     | _ -> assert false
-  
+
+  let simpl x = x
 end
 
 module RMeta : sig
@@ -283,7 +286,7 @@ end = struct
     let rec aux ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
       if Reduction.are_convertible sg t1' t2'
         then return true
-        else begin (fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->
+        else begin (*(fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->*)
         match t1', t2' with
           | Meta (_,_,n,_), Meta (_,_,m,_) -> set_meta n t2' >>= (function | true -> return true | false -> set_meta m t1')
           | Meta (_,_,n,_), _ -> set_meta n t2'
@@ -325,6 +328,8 @@ end = struct
   let extract f = f empty
 
   let apply pb t = S.apply pb.defs t
+
+  let simpl t pb = apply pb t,pb
 end
 
 (* ********************** TYPE CHECKING/INFERENCE  *)
@@ -461,6 +466,8 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
     | _ ->
         begin
           infer_pattern sg ctx q sigma0 pat >>= fun (inf_ty,sigma1) ->
+          M.simpl exp_ty >>= fun exp_ty ->
+          M.simpl inf_ty >>= fun inf_ty ->
             match pseudo_unification sg q exp_ty inf_ty with
               | None ->
                 raise (TypingError (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty)))
@@ -487,10 +494,23 @@ let checking sg (te:term) (ty_exp:term) : judgment =
     KRefine.check sg te_r jty
 
 let check_rule sg (ctx,le,ri:rule) : unit =
+  let ((ctx,ri),pb) = RMeta.extract (RMeta.(>>=)
+    (RMeta.fold (fun ctx (l,id,ty) -> RMeta.(>>=) (MetaRefine.infer sg ctx ty) (RMeta.add sg l id)) Context.empty (List.rev ctx))
+    (fun ctx -> RMeta.(>>=) (MetaRefine.infer_pattern sg ctx 0 SS.identity le)
+    (fun (ty_inf,sigma) ->
+    let ri2 =
+      if SS.is_identity sigma then ri else ( debug "%a" SS.pp sigma; (SS.apply sigma ri 0) ) in
+    RMeta.(>>=) (MetaRefine.infer sg ctx ri2)
+    (fun j_ri -> RMeta.(>>=) (RMeta.unify sg ctx ty_inf (CTerm j_ri.ty))
+    (function
+      | true -> RMeta.return (ctx,ri)
+      | false -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
+    ))))) in
   let ctx =
-    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx ty) )
-      Context.empty (List.rev ctx) in
+    List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx (RMeta.apply pb ty)) )
+      Context.empty (List.rev (Context.to_context ctx)) in
   let (ty_inf,sigma) = KRefine.infer_pattern sg ctx 0 SS.identity le in
+  let ri = RMeta.apply pb ri in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in

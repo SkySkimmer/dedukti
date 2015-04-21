@@ -98,7 +98,7 @@ let get_nb_args (esize:int) (p:pattern) : int array =
 (* Checks that the variables are applied to enough arguments *)
 let check_nb_args (nb_args:int array) (te:term) : unit =
   let rec aux k = function
-    | Kind | Type _ | Const _ | Hole _ -> ()
+    | Kind | Type _ | Const _ -> ()
     | DB (l,id,n) ->
         if n>=k && nb_args.(n-k)>0 then
           raise (DtreeExn (NotEnoughArguments (l,id,n,0,nb_args.(n-k))))
@@ -111,7 +111,7 @@ let check_nb_args (nb_args:int array) (te:term) : unit =
     | App (f,a1,args) -> List.iter (aux k) (f::a1::args)
     | Lam (_,_,None,b) -> aux (k+1) b
     | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> (aux k a;  aux (k+1) b)
-    | Meta (_,_,_,ts) -> List.iter (fun (_,t) -> aux k t) ts
+    | Meta _ | Hole _ -> assert false
   in
     aux 0 te
 

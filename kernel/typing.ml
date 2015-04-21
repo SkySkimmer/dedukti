@@ -28,6 +28,75 @@ type typing_error =
 
 exception TypingError of typing_error
 
+(* **** PSEUDO UNIFICATION ********************** *)
+
+let rec add_to_list q lst args1 args2 =
+  match args1,args2 with
+    | [], [] -> lst
+    | a1::args1, a2::args2 -> add_to_list q ((q,a1,a2)::lst) args1 args2
+    | _, _ -> raise (Invalid_argument "add_to_list")
+
+module SS = Subst.S
+
+let unshift_reduce sg q t =
+  try Some (Subst.unshift q t)
+  with Subst.UnshiftExn ->
+    ( try Some (Subst.unshift q (Reduction.snf sg t))
+      with Subst.UnshiftExn -> None )
+
+let pseudo_unification sg (q:int) (a:term) (b:term) : SS.t option =
+  let rec aux (sigma:SS.t) : (int*term*term) list -> SS.t option = function
+    | [] -> Some sigma
+    | (q,t1,t2)::lst ->
+        begin
+          let t1' = Reduction.whnf sg (SS.apply sigma t1 q) in
+          let t2' = Reduction.whnf sg (SS.apply sigma t2 q) in
+            if term_eq t1' t2' then aux sigma lst
+            else
+              match t1', t2' with
+                | Kind, Kind | Type _, Type _ -> aux sigma lst
+                | DB (_,_,n), DB (_,_,n') when ( n=n' ) -> aux sigma lst
+                | Const (_,md,id), Const (_,md',id') when
+                    ( Basics.ident_eq id id' && Basics.ident_eq md md' ) ->
+                    aux sigma lst
+
+                | DB (_,x,n), t
+                | t, DB (_,x,n) when n>=q ->
+                  begin
+                    match unshift_reduce sg q t with
+                    | None -> None
+                    | Some t' ->
+                      ( match SS.add sigma x (n-q) t' with
+                        | None -> assert false
+                        | Some sigma2 -> aux sigma2 lst )
+                  end
+
+                | Pi (_,_,a,b), Pi (_,_,a',b') ->
+                    aux sigma ((q,a,a')::(q+1,b,b')::lst)
+                | Lam (_,_,_,b), Lam (_,_,_,b') ->
+                    aux sigma ((q+1,b,b')::lst)
+
+                | App (DB (_,_,n),_,_), _
+                | _, App (DB (_,_,n),_,_) when ( n >= q ) ->
+                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
+                    else None
+
+                | App (Const (l,md,id),_,_), _
+                | _, App (Const (l,md,id),_,_) when (not (Signature.is_constant sg l md id)) ->
+                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
+                    else None
+
+                | App (f,a,args), App (f',a',args') ->
+                    (* f = Kind | Type | DB n when n<q | Pi _
+                     * | Const md.id when (is_constant md id) *)
+                    aux sigma ((q,f,f')::(q,a,a')::(add_to_list q lst args args'))
+
+                | _, _ -> None
+        end
+  in
+  if term_eq a b then Some SS.identity
+  else aux SS.identity [(q,a,b)]
+
 (* ********************** CONTEXT *)
 
 module Context :
@@ -94,9 +163,6 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> candidate -> term t
   
   val meta_constraint : term -> (Context.t * term) t
-  
-  val eval : term t -> term
-  val evalj : judgment t -> judgment
 end
 
 module KMeta : Meta with type 'a t = 'a = struct
@@ -105,7 +171,7 @@ module KMeta : Meta with type 'a t = 'a = struct
   let return x = x
   let (>>=) x f = f x
   
-  let fold f x l = List.fold_left (fun a b -> a >>= fun a -> f a b) (return x) l
+  let fold = List.fold_left
   
   let add _ = Context.add
   
@@ -127,11 +193,17 @@ module KMeta : Meta with type 'a t = 'a = struct
     | Meta (l,s,_,_) -> raise (TypingError (MetaInKernel (l,s)))
     | _ -> assert false
   
-  let eval t = t
-  let evalj j = j
 end
 
-module RMeta : Meta = struct
+module RMeta : sig
+  include Meta
+  
+  type problem
+  
+  val extract : 'a t -> 'a*problem
+  
+  val apply : problem -> term -> term
+end = struct
   module S = Msubst.S
   
   type metainfo =
@@ -211,14 +283,16 @@ module RMeta : Meta = struct
     let rec aux ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
       if Reduction.are_convertible sg t1' t2'
         then return true
-        else begin (*(fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->*)
+        else begin (fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->
         match t1', t2' with
-          | Meta (_,_,n,ts), _ -> set_meta n t2'
-          | _, Meta (_,_,n,ts) -> set_meta n t1'
+          | Meta (_,_,n,_), Meta (_,_,m,_) -> set_meta n t2' >>= (function | true -> return true | false -> set_meta m t1')
+          | Meta (_,_,n,_), _ -> set_meta n t2'
+          | _, Meta (_,_,n,_) -> set_meta n t1'
           | Pi (l,x,a1,b1), Pi(_,_,a2,b2) -> aux ctx a1 a2 >>= fun b -> if b
             then aux (Context.unsafe_add ctx l x a1) b1 b2
             else return false
-          | _, _ -> Printf.eprintf "Failed to unify %a === %a.\n" pp_term t1' pp_term t2'; return false
+          | _, _ -> (fun pb -> Printf.eprintf "Failed to unify %a === %a\nunder %a\nwith %a.\n" pp_term t1' pp_term t2' pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->
+              return false
       end in
     match c with
       | CTerm u -> aux ctx t u
@@ -247,14 +321,10 @@ module RMeta : Meta = struct
         | false -> return None
         end
     | _ -> return None
-  
+
+  let extract f = f empty
+
   let apply pb t = S.apply pb.defs t
-  
-  let eval t = let (t',pb) = t empty in
-    apply pb t'
-  
-  let evalj jdg = let ({ctx=ctx; te=te; ty=ty;},pb) = jdg empty in
-    {ctx=ctx; te=apply pb te; ty=apply pb ty;}
 end
 
 (* ********************** TYPE CHECKING/INFERENCE FOR TERMS  *)
@@ -354,83 +424,14 @@ module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
  = Refiner(RMeta)
 
 let inference sg (te:term) : judgment =
-  let jdg0 = RMeta.evalj (MetaRefine.infer sg Context.empty te) in
-    KRefine.infer sg Context.empty jdg0.te
+  let jdg0,pb = RMeta.extract (MetaRefine.infer sg Context.empty te) in
+    KRefine.infer sg Context.empty (RMeta.apply pb jdg0.te)
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let jdg_te = RMeta.evalj (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty)) in
-  let ty_r = jdg_te.ty in let te_r = jdg_te.te in
+  let jdg_te,pb = RMeta.extract (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty)) in
+  let ty_r = RMeta.apply pb jdg_te.ty in let te_r = RMeta.apply pb jdg_te.te in
   let jty = KRefine.infer sg Context.empty ty_r in
     KRefine.check sg te_r jty
-
-(* **** PSEUDO UNIFICATION ********************** *)
-
-let rec add_to_list q lst args1 args2 =
-  match args1,args2 with
-    | [], [] -> lst
-    | a1::args1, a2::args2 -> add_to_list q ((q,a1,a2)::lst) args1 args2
-    | _, _ -> raise (Invalid_argument "add_to_list")
-
-module SS = Subst.S
-
-let unshift_reduce sg q t =
-  try Some (Subst.unshift q t)
-  with Subst.UnshiftExn ->
-    ( try Some (Subst.unshift q (Reduction.snf sg t))
-      with Subst.UnshiftExn -> None )
-
-let pseudo_unification sg (q:int) (a:term) (b:term) : SS.t option =
-  let rec aux (sigma:SS.t) : (int*term*term) list -> SS.t option = function
-    | [] -> Some sigma
-    | (q,t1,t2)::lst ->
-        begin
-          let t1' = Reduction.whnf sg (SS.apply sigma t1 q) in
-          let t2' = Reduction.whnf sg (SS.apply sigma t2 q) in
-            if term_eq t1' t2' then aux sigma lst
-            else
-              match t1', t2' with
-                | Kind, Kind | Type _, Type _ -> aux sigma lst
-                | DB (_,_,n), DB (_,_,n') when ( n=n' ) -> aux sigma lst
-                | Const (_,md,id), Const (_,md',id') when
-                    ( Basics.ident_eq id id' && Basics.ident_eq md md' ) ->
-                    aux sigma lst
-
-                | DB (_,x,n), t
-                | t, DB (_,x,n) when n>=q ->
-                  begin
-                    match unshift_reduce sg q t with
-                    | None -> None
-                    | Some t' ->
-                      ( match SS.add sigma x (n-q) t' with
-                        | None -> assert false
-                        | Some sigma2 -> aux sigma2 lst )
-                  end
-
-                | Pi (_,_,a,b), Pi (_,_,a',b') ->
-                    aux sigma ((q,a,a')::(q+1,b,b')::lst)
-                | Lam (_,_,_,b), Lam (_,_,_,b') ->
-                    aux sigma ((q+1,b,b')::lst)
-
-                | App (DB (_,_,n),_,_), _
-                | _, App (DB (_,_,n),_,_) when ( n >= q ) ->
-                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
-                    else None
-
-                | App (Const (l,md,id),_,_), _
-                | _, App (Const (l,md,id),_,_) when (not (Signature.is_constant sg l md id)) ->
-                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
-                    else None
-
-                | App (f,a,args), App (f',a',args') ->
-                    (* f = Kind | Type | DB n when n<q | Pi _
-                     * | Const md.id when (is_constant md id) *)
-                    aux sigma ((q,f,f')::(q,a,a')::(add_to_list q lst args args'))
-
-                | _, _ -> None
-        end
-  in
-  if term_eq a b then Some SS.identity
-  else aux SS.identity [(q,a,b)]
 
 (* **** TYPE CHECKING/INFERENCE FOR PATTERNS ******************************** *)
 

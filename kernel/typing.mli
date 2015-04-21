@@ -57,10 +57,6 @@ module type Meta = sig
   val new_meta : Context.t -> loc -> ident -> candidate -> term t
   
   val meta_constraint : term -> (Context.t * term) t
-  
-  val eval : term t -> term
-  val evalj : judgment t -> judgment
-  (** Beware: does not eval the context. *)
 end
 
 module KMeta : Meta with type 'a t = 'a
@@ -78,6 +74,8 @@ module type RefinerS = sig
   val check       : Signature.t -> term -> judgment -> judgment t
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
+  
+  val infer_pattern : Signature.t -> Context.t -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
 end
 
 module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t

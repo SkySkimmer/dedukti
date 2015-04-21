@@ -327,19 +327,23 @@ end = struct
   let apply pb t = S.apply pb.defs t
 end
 
-(* ********************** TYPE CHECKING/INFERENCE FOR TERMS  *)
+(* ********************** TYPE CHECKING/INFERENCE  *)
 module type RefinerS = sig
   type 'a t
 
   val infer : Signature.t -> Context.t -> term -> judgment t
 
   val check : Signature.t -> term -> judgment -> judgment t
+
+  val infer_pattern : Signature.t -> Context.t -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
 end
 
 module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
   type 'a t = 'a M.t
 
   let (>>=) = M.(>>=)
+
+  (* ********************** TERMS *)
 
   let rec infer sg (ctx:Context.t) : term -> judgment t = function
     | Kind -> raise (TypingError KindIsNotTypable)
@@ -414,7 +418,54 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
       | _, _ -> assert false
       in
     aux [] (List.rev ts) (List.rev (Context.to_context ctx0))
+
+
+  (* ********************** PATTERNS *)
   
+  let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:SS.t) (pat:pattern) : (term*SS.t) t =
+    match pat with
+    | Pattern (l,md,id,args) ->
+      M.fold (infer_pattern_aux sg ctx q)
+        (mk_Const l md id,SS.apply sigma (Signature.get_type sg l md id) q,sigma) args >>= fun (_,ty,si) ->
+      M.return (ty,si)
+    | Var (l,x,n,args) ->
+      M.fold (infer_pattern_aux sg ctx q)
+        (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args >>= fun (_,ty,si) ->
+      M.return (ty,si)
+    | Brackets t -> infer sg ctx t >>= fun jdg -> M.return ( jdg.ty, SS.identity )
+    | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
+
+  and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : (term*term*SS.t) t =
+    M.pi sg ctx ty_f >>= function
+      | Some (_,_,a,b) ->
+          check_pattern sg ctx q a sigma0 arg >>= fun sigma ->
+          let arg' = pattern_to_term arg in
+          let b2 = SS.apply sigma b (q+1) in
+          let arg2 = SS.apply sigma arg' q in
+          M.return ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
+      | None -> raise (TypingError ( ProductExpected (f,Context.to_context ctx,ty_f)))
+
+  and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pattern) : SS.t t =
+    match pat with
+    | Lambda (l,x,p) ->
+        begin
+          M.pi sg ctx exp_ty >>= function
+            | Some (l,x,a,b) ->
+                let ctx2 = Context.unsafe_add ctx l x a in
+                  check_pattern sg ctx2 (q+1) b sigma0 p
+            | None -> raise (TypingError ( ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty)))
+        end
+     | Brackets t ->
+       check sg t { ctx; te=exp_ty; ty=Term.mk_Type dloc; } >>= fun _ ->
+         M.return SS.identity
+    | _ ->
+        begin
+          infer_pattern sg ctx q sigma0 pat >>= fun (inf_ty,sigma1) ->
+            match pseudo_unification sg q exp_ty inf_ty with
+              | None ->
+                raise (TypingError (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty)))
+              | Some sigma2 -> M.return (SS.merge sigma1 sigma2)
+        end
 end
 
 module KRefine : RefinerS with type 'a t = 'a
@@ -422,6 +473,8 @@ module KRefine : RefinerS with type 'a t = 'a
 
 module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
  = Refiner(RMeta)
+
+(* **** REFINE AND CHECK ******************************** *)
 
 let inference sg (te:term) : judgment =
   let jdg0,pb = RMeta.extract (MetaRefine.infer sg Context.empty te) in
@@ -433,60 +486,11 @@ let checking sg (te:term) (ty_exp:term) : judgment =
   let jty = KRefine.infer sg Context.empty ty_r in
     KRefine.check sg te_r jty
 
-(* **** TYPE CHECKING/INFERENCE FOR PATTERNS ******************************** *)
-
-let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:SS.t) (pat:pattern) : term*SS.t =
-  match pat with
-  | Pattern (l,md,id,args) ->
-    let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
-        (mk_Const l md id,SS.apply sigma (Signature.get_type sg l md id) q,sigma) args in
-    (ty,si)
-  | Var (l,x,n,args) ->
-    let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
-        (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args in
-    (ty,si)
-  | Brackets t -> ( (KRefine.infer sg ctx t).ty, SS.identity )
-  | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
-
-and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : term*term*SS.t =
-  match Reduction.whnf sg ty_f with
-    | Pi (_,_,a,b) ->
-        let sigma = check_pattern sg ctx q a sigma0 arg in
-        let arg' = pattern_to_term arg in
-        let b2 = SS.apply sigma b (q+1) in
-        let arg2 = SS.apply sigma arg' q in
-        ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
-    | ty_f -> raise (TypingError ( ProductExpected (f,Context.to_context ctx,ty_f)))
-
-and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pattern) : SS.t =
-  match pat with
-  | Lambda (l,x,p) ->
-      begin
-        match Reduction.whnf sg exp_ty with
-          | Pi (l,x,a,b) ->
-              let ctx2 = Context.unsafe_add ctx l x a in
-                check_pattern sg ctx2 (q+1) b sigma0 p
-          | exp_ty -> raise (TypingError ( ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty)))
-      end
-   | Brackets t ->
-     ( ignore (KRefine.check sg t { ctx; te=exp_ty; ty=Term.mk_Type dloc; });
-       SS.identity )
-  | _ ->
-      begin
-        let (inf_ty,sigma1) = infer_pattern sg ctx q sigma0 pat in
-          match pseudo_unification sg q exp_ty inf_ty with
-            | None ->
-              raise (TypingError (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty)))
-            | Some sigma2 -> SS.merge sigma1 sigma2
-      end
-
-(* ************************************************************************** *)
-
 let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
     List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx ty) )
       Context.empty (List.rev ctx) in
-  let (ty_inf,sigma) = infer_pattern sg ctx 0 SS.identity le in
+  let (ty_inf,sigma) = KRefine.infer_pattern sg ctx 0 SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in

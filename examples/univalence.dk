@@ -9,19 +9,19 @@ type_t : type.
 
 (; compare functions ;)
 forall : A : ? -> B : (U A -> type) -> type.
-[A : type, B : (U A -> type)] U (forall A B) --> a : U A -> U (B a).
+[A : ?, B : (U A -> type)] U (forall A B) --> a : U A -> U (B a).
 
 fun (A : ?) (B : ?) : type := forall A (a => B).
 
 eq : A : ? -> U A -> U A -> type.
 
-eq_refl : A : ? -> a : ? -> U (eq A a a).
+eq_refl : A : ? -> a : U A -> U (eq A a a).
 
-`eq_rect : A : type -> a : U A -> P : (b : U A -> e : U (eq A a b) -> type) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
+`eq_rect : A : ? -> a : U A -> P : (b : U A -> e : U (eq A a b) -> ?) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
 
-[A : type, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
+[A : ?, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
 
-transport (A : type) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
+transport (A : ?) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
  := eq_rect A x (a : U A => p : U (eq A x a) => P a) H y e.
 
 eq_inverse (A : type) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)

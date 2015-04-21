@@ -24,16 +24,18 @@ module S = struct
       end
     | _ -> None
 
-  let rec apply (sigma:t) : term -> term = function
-    | Kind | Type _ | Const _ | Hole _ | DB _ as t -> t
-    | App (f,a,args) -> mk_App (apply sigma f) (apply sigma a) (List.map (apply sigma) args)
-    | Lam (l,x,Some a,te) -> mk_Lam l x (Some (apply sigma a)) (apply sigma te)
-    | Lam (l,x,None,te) -> mk_Lam l x None (apply sigma te)
-    | Pi (l,x,a,b) -> mk_Pi l x (apply sigma a) (apply sigma b)
-    | Meta (lc,s,n,ts) as mt -> begin match meta_val sigma mt with
-        | Some mt' -> apply sigma mt'
-        | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,apply sigma t) ts)
-      end
+  let apply (sigma:t) (t:term) : term =
+    let rec aux = function
+      | Kind | Type _ | Const _ | Hole _ | DB _ as t -> t
+      | App (f,a,args) -> mk_App (aux f) (aux a) (List.map (aux) args)
+      | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
+      | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
+      | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
+      | Meta (lc,s,n,ts) as mt -> begin match meta_val sigma mt with
+          | Some mt' -> aux mt'
+          | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
+        end
+    in if IntMap.is_empty sigma then t else aux t
 
   let rec whnf sg sigma t = match Reduction.whnf sg t with
     | Meta _ as mt -> begin match meta_val sigma mt with

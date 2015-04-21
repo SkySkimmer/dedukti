@@ -8,14 +8,14 @@ type_t : type.
 [] U type_t --> type.
 
 (; compare functions ;)
-forall : A : type -> B : (U A -> type) -> type.
+forall : A : ? -> B : (U A -> type) -> type.
 [A : type, B : (U A -> type)] U (forall A B) --> a : U A -> U (B a).
 
-fun (A : type) (B : type) : type := forall A (a : U A => B).
+fun (A : ?) (B : ?) : type := forall A (a => B).
 
-eq : A : type -> U A -> U A -> type.
+eq : A : ? -> U A -> U A -> type.
 
-eq_refl : A : type -> a : U A -> U (eq A a a).
+eq_refl : A : ? -> a : ? -> U (eq A a a).
 
 `eq_rect : A : type -> a : U A -> P : (b : U A -> e : U (eq A a b) -> type) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
 

@@ -83,11 +83,10 @@ and pp_pattern_wp out = function
   | p -> pp_pattern out p
 
 let pp_rule out (ctx,pat,te) =
-  let pp_decl out (_,id,ty) = fprintf out "%a:%a" pp_ident id pp_term ty in
-    fprintf out "[%a] %a --> %a"
-      (pp_list "," pp_decl) ctx
-      pp_pattern pat
-      pp_term te
+  fprintf out "[%a] %a --> %a"
+    pp_context ctx
+    pp_pattern pat
+    pp_term te
 
 let pp_frule out r = pp_rule out (r.ctx,Pattern(r.l,r.md,r.id,r.args),r.rhs)
 

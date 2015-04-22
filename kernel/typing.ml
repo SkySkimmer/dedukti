@@ -215,7 +215,7 @@ end = struct
   
   let pi sg ctx t = whnf sg t >>= function
     | Pi (l,x,a,b) -> return (Some (l,x,a,b))
-    | Meta _ | App (Meta _, _, _) -> let empty = Basics.empty in
+    | _ -> let empty = Basics.empty in
         let ctx0 = Context.to_context ctx in
         new_meta ctx0 dloc empty (cannot()) >>= fun ms ->
         new_meta ctx0 dloc empty (CTerm ms) >>= fun mt ->
@@ -225,9 +225,8 @@ end = struct
         let pi = mk_Pi dloc empty mt mk in
         unify sg ctx0 t (CTerm pi) >>= begin function
         | true -> return (Some (dloc,empty,mt,mk))
-        | false -> return None
+        | false -> return None (* Note that here we have some useless metas polluting the unification. Can we eliminate them? *)
         end
-    | _ -> return None
 end
 
 (* ********************** TYPE CHECKING/INFERENCE  *)

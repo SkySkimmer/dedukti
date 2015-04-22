@@ -38,3 +38,11 @@ val pp_term     : out_channel -> term -> unit
 
 type context = ( loc * ident * term ) list
 val pp_context  : out_channel -> context -> unit
+
+(** {3 Unification candidates} *)
+
+type candidate =
+  | CTerm of term
+  | CType
+  | CSort
+

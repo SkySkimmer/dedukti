@@ -24,7 +24,6 @@ type typing_error =
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
-  | UnknownMeta of int
 
 exception TypingError of typing_error
 
@@ -142,11 +141,6 @@ type judgment = Context.t judgment0
 
 (* ********************** METAS *)
 
-type candidate =
-  | CTerm of term
-  | CType
-  | CSort
-
 let cannot () = if !coc then CSort else CTerm (mk_Type dloc)
 
 module type Meta = sig
@@ -161,7 +155,7 @@ module type Meta = sig
   
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
-  val unify : Signature.t -> Context.t -> term -> candidate -> bool t
+  val unify : Signature.t -> context -> term -> candidate -> bool t
   val new_meta : context -> loc -> ident -> candidate -> term t
   
   val meta_constraint : term -> (context * term) t
@@ -209,109 +203,15 @@ module RMeta : sig
   
   val apply : problem -> term -> term
 end = struct
-  module S = Msubst.S
-  
-  type metainfo =
-    | MetaDecl of context*int*term (* ctx |- ?j : ty *)
-    | MetaType of context*int      (* either ctx |- ?j : s or ?j = Kind *)
-    | MetaSort of context*int      (* ?j = Type or Kind *)
+  include Unifier
 
-  let pp_metainfo out = function
-    | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context ctx n pp_term ty
-    | MetaType (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context ctx n
-    | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i sort" pp_context ctx n
-
-  type problem = { cpt:int; decls: metainfo list; defs: S.t; }
-  
-  type 'a t = problem -> 'a * problem
-  
-  let return x pb = (x,pb)
-  let (>>=) x f pb = let (x',pb') = x pb in f x' pb'
-  
   let fold f x l = List.fold_left (fun a b -> a >>= fun a -> f a b) (return x) l
-  
-  let empty = { cpt=0; decls=[]; defs=S.identity; }
-  
-  let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list "\n" pp_metainfo) pb.decls S.pp pb.defs
-  
-  let whnf sg t pb = (S.whnf sg pb.defs t,pb)
-  
-  let new_meta ctx l s c pb =
-    let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
-    let mj = mk_Meta l s pb.cpt substj in
-    match c with
-      | CTerm ty -> 
-            (mj,{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs;})
-      | CType -> (mj,{cpt=pb.cpt+1; decls=(MetaType (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
-      | CSort -> (mj,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs;})
 
-  let rec accessible n pb = function
-    | Kind | Type _ | DB _ | Const _ | Hole _ -> false
-    | App (f,a,args) -> List.exists (accessible n pb) (f::a::args)
-    | Lam (_,_,None,u) -> accessible n pb u
-    | Lam (_,_,Some a,u) -> accessible n pb a || accessible n pb u
-    | Pi (_,_,a,b) -> accessible n pb a || accessible n pb b
-    | Meta (_,_,m,ts) -> (n==m) || List.exists (fun (_,x) -> accessible n pb x) ts || ( match S.meta_raw pb.defs m with
-        | Some t -> accessible n pb t
-        | None -> false)
-
-  let set_meta n t pb = if accessible n pb t
-    then false,pb
-    else true,{cpt=pb.cpt; decls=pb.decls; defs=S.add pb.defs n t}
-  
-  let set_decl d pb = let n = match d with | MetaDecl (_,n,_) | MetaType (_,n) | MetaSort (_,n) -> n in
-    let rec aux s = function
-      | MetaDecl (_,m,_) :: tl | MetaType (_,m) :: tl | MetaSort (_,m) :: tl when n=m -> List.rev_append s (d::tl)
-      | d' :: tl -> aux (d'::s) tl
-      | [] -> assert false
-    in (),{cpt=pb.cpt; decls=aux [] pb.decls; defs=pb.defs;}
-  
-  (* We need to infer a type for gamma |- ?j[sigma].
-     If delta |- ?j : t in the context we check gamma |- sigma : delta then return sigma(t)
-     If delta |- ?j : * then we know that ?j <> Kind, then ?j : ?k with ?k = * and we are in the standard case
-     If delta |- ?j = * then ?j = Type : Kind
-  *)
-  let meta_constraint = function
-    | Meta (l,s,n,_) -> begin fun pb ->
-      try (List.find (function
-        | MetaDecl (_,m,_) | MetaType (_,m) | MetaSort (_,m) -> n=m) pb.decls),pb
-      with | Not_found -> raise (TypingError (UnknownMeta n))
-      end >>= begin function
-        | MetaDecl (ctx,_,ty) -> return (ctx,ty)
-        | MetaType (ctx,_) -> new_meta ctx l s CSort >>= fun mk ->
-            set_decl (MetaDecl (ctx,n,mk)) >>= fun () -> return (ctx,mk)
-        | MetaSort (ctx,_) -> set_decl (MetaDecl (ctx,n,mk_Kind)) >>= fun () ->
-            set_meta n (mk_Type l) >>= fun _ -> return (ctx,mk_Kind)
-        end
-    | _ -> assert false
-  
-  let unify sg ctx t c =
-    let rec aux ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
-      if Reduction.are_convertible sg t1' t2'
-        then return true
-        else begin (*(fun pb -> Printf.eprintf "Unification: %a === %a\nunder %a\nwith %a.\n" pp_term t1 pp_term t2 pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->*)
-        match t1', t2' with
-          | Meta (_,_,n,_), Meta (_,_,m,_) -> set_meta n t2' >>= (function | true -> return true | false -> set_meta m t1')
-          | Meta (_,_,n,_), _ -> set_meta n t2'
-          | _, Meta (_,_,n,_) -> set_meta n t1'
-          | Pi (l,x,a1,b1), Pi(_,_,a2,b2) -> aux ctx a1 a2 >>= fun b -> if b
-            then aux (Context.unsafe_add ctx l x a1) b1 b2
-            else return false
-          | _, _ -> (fun pb -> Printf.eprintf "Failed to unify %a === %a\nunder %a\nwith %a.\n" pp_term t1' pp_term t2' pp_context (Context.to_context ctx) pp_problem pb; (),pb) >>= fun () ->
-              return false
-      end in
-    match c with
-      | CTerm u -> aux ctx t u
-      | CType -> failwith "Refine mode: cannot unify with type"
-      | CSort -> begin match t with
-          | Kind | Type _ -> return true
-          | _ -> aux ctx t (mk_Type dloc) (* bad *)
-          end
-  
-  let add sg l x jdg = (if !coc then unify sg jdg.ctx jdg.ty CSort else unify sg jdg.ctx jdg.ty (CTerm (mk_Type dloc))) >>= fun b ->
+  let add sg l x jdg = let ctx0 = Context.to_context jdg.ctx in
+    unify sg ctx0 jdg.ty (cannot()) >>= fun b ->
     if b then return (Context.unsafe_add jdg.ctx l x jdg.te)
     else raise (TypingError (ConvertibilityError
-                                   (jdg.te, Context.to_context jdg.ctx, mk_Type dloc, jdg.ty)))
+                                   (jdg.te, ctx0, mk_Type dloc, jdg.ty)))
   
   let pi sg ctx t = whnf sg t >>= function
     | Pi (l,x,a,b) -> return (Some (l,x,a,b))
@@ -323,17 +223,11 @@ end = struct
         new_meta ctx2 dloc empty CSort >>= fun ml ->
         new_meta ctx2 dloc empty (CTerm ml) >>= fun mk ->
         let pi = mk_Pi dloc empty mt mk in
-        unify sg ctx t (CTerm pi) >>= begin function
+        unify sg ctx0 t (CTerm pi) >>= begin function
         | true -> return (Some (dloc,empty,mt,mk))
         | false -> return None
         end
     | _ -> return None
-
-  let extract f = f empty
-
-  let apply pb t = S.apply pb.defs t
-
-  let simpl t pb = apply pb t,pb
 end
 
 (* ********************** TYPE CHECKING/INFERENCE  *)
@@ -365,7 +259,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         infer sg ctx a >>= fun jdg_a ->
         M.add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
-        M.unify sg ctx jdg_b.ty CSort >>= fun b -> if b
+        M.unify sg (Context.to_context ctx) jdg_b.ty CSort >>= fun b -> if b
           then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
           else raise (TypingError
                          (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
@@ -404,7 +298,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
             )
         | _ ->
           infer sg ctx te >>= fun jte ->
-          M.unify sg ctx jte.ty (CTerm ty_exp) >>= fun b -> if b
+          M.unify sg (Context.to_context ctx) jte.ty (CTerm ty_exp) >>= fun b -> if b
             then M.return { ctx=ctx; te=jte.te; ty=ty_exp; }
             else raise (TypingError
                             (ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
@@ -505,7 +399,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     let ri2 =
       if SS.is_identity sigma then ri else ( debug "%a" SS.pp sigma; (SS.apply sigma ri 0) ) in
     RMeta.(>>=) (MetaRefine.infer sg ctx ri2)
-    (fun j_ri -> RMeta.(>>=) (RMeta.unify sg ctx ty_inf (CTerm j_ri.ty))
+    (fun j_ri -> RMeta.(>>=) (RMeta.unify sg (Context.to_context ctx) ty_inf (CTerm j_ri.ty))
     (function
       | true -> RMeta.return (ctx,ri)
       | false -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
@@ -519,7 +413,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
   let j_ri = KRefine.infer sg ctx ri2 in
-    if KMeta.unify sg ctx ty_inf (CTerm j_ri.ty)
+    if KMeta.unify sg (Context.to_context ctx) ty_inf (CTerm j_ri.ty)
       then ()
       else raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 

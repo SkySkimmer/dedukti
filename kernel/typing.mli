@@ -16,7 +16,6 @@ type typing_error =
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
-  | UnknownMeta of int
 
 exception TypingError of typing_error
 
@@ -35,11 +34,6 @@ type judgment = Context.t judgment0
 
 (** {2 Meta aware operations} *)
 
-type candidate =
-  | CTerm of term
-  | CType
-  | CSort
-
 module type Meta = sig
   type 'a t
   
@@ -52,7 +46,7 @@ module type Meta = sig
   
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
-  val unify : Signature.t -> Context.t -> term -> candidate -> bool t
+  val unify : Signature.t -> context -> term -> candidate -> bool t
   (** [unify sg ctx t c] tries to unify t and c. It may add unsolved constraints to the problem. *)
   val new_meta : context -> loc -> ident -> candidate -> term t
   

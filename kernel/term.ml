@@ -73,3 +73,10 @@ let pp_context out ctx =
   pp_list ", " (fun out (_,x,ty) ->
                    Printf.fprintf out "%a: %a" pp_ident x pp_term ty )
     out (List.rev ctx)
+
+
+type candidate =
+  | CTerm of term
+  | CType
+  | CSort
+

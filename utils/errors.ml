@@ -31,6 +31,11 @@ let pp_context2 out = function
   | (_::_) as ctx ->
     Printf.fprintf out " in context:\n%a" pp_context ctx
 
+let fail_refine_error err = 
+  let open Unifier in
+    match err with
+      | UnknownMeta n -> fail dloc "Unknown meta ?_%i encountered." n
+
 let fail_typing_error err =
   let open Typing in
     match err with
@@ -62,7 +67,6 @@ let fail_typing_error err =
           fail lc "Cannot infer the type of domain-free lambda."
       | MetaInKernel (lc,s) -> fail lc "Unexpected metavariable \"%a\" in kernel mode." pp_ident s
       | InferSortMeta (lc,s) -> fail lc "TODO: implement type inference for sort meta (hit \"%a\")." pp_ident s
-      | UnknownMeta n -> fail dloc "Unknown meta ?_%i encountered." n
 
 let fail_dtree_error err =
   let open Dtree in
@@ -116,6 +120,7 @@ let fail_signature_error err =
 let fail_env_error = function
   | Env.EnvErrorSignature e -> fail_signature_error e
   | Env.EnvErrorType e -> fail_typing_error e
+  | Env.EnvErrorRefine e -> fail_refine_error e
   | Env.KindLevelDefinition (lc,id) ->
     fail lc "Cannot add a rewrite rule for '%a' since it is a kind." pp_ident id
 

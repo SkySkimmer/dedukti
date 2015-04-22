@@ -54,9 +54,9 @@ module type Meta = sig
   
   val unify : Signature.t -> Context.t -> term -> candidate -> bool t
   (** [unify sg ctx t c] tries to unify t and c. It may add unsolved constraints to the problem. *)
-  val new_meta : Context.t -> loc -> ident -> candidate -> term t
+  val new_meta : context -> loc -> ident -> candidate -> term t
   
-  val meta_constraint : term -> (Context.t * term) t
+  val meta_constraint : term -> (context * term) t
   
   val simpl : term -> term t
 end

@@ -147,6 +147,8 @@ type candidate =
   | CType
   | CSort
 
+let cannot () = if !coc then CSort else CTerm (mk_Type dloc)
+
 module type Meta = sig
   type 'a t
   
@@ -160,9 +162,9 @@ module type Meta = sig
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
   val unify : Signature.t -> Context.t -> term -> candidate -> bool t
-  val new_meta : Context.t -> loc -> ident -> candidate -> term t
+  val new_meta : context -> loc -> ident -> candidate -> term t
   
-  val meta_constraint : term -> (Context.t * term) t
+  val meta_constraint : term -> (context * term) t
   
   val simpl : term -> term t
 end
@@ -210,14 +212,14 @@ end = struct
   module S = Msubst.S
   
   type metainfo =
-    | MetaDecl of Context.t*int*term (* ctx |- ?j : ty *)
-    | MetaType of Context.t*int      (* either ctx |- ?j : s or ?j = Kind *)
-    | MetaSort of Context.t*int      (* ?j = Type or Kind *)
+    | MetaDecl of context*int*term (* ctx |- ?j : ty *)
+    | MetaType of context*int      (* either ctx |- ?j : s or ?j = Kind *)
+    | MetaSort of context*int      (* ?j = Type or Kind *)
 
   let pp_metainfo out = function
-    | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context (Context.to_context ctx) n pp_term ty
-    | MetaType (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context (Context.to_context ctx) n
-    | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i sort" pp_context (Context.to_context ctx) n
+    | MetaDecl (ctx,n,ty) -> Printf.fprintf out "%a |- ?_%i : %a" pp_context ctx n pp_term ty
+    | MetaType (ctx,n)    -> Printf.fprintf out "%a |- ?_%i : *" pp_context ctx n
+    | MetaSort (ctx,n)    -> Printf.fprintf out "%a |- ?_%i sort" pp_context ctx n
 
   type problem = { cpt:int; decls: metainfo list; defs: S.t; }
   
@@ -234,7 +236,8 @@ end = struct
   
   let whnf sg t pb = (S.whnf sg pb.defs t,pb)
   
-  let new_meta ctx l s c pb = let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) (Context.to_context ctx) in
+  let new_meta ctx l s c pb =
+    let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
     let mj = mk_Meta l s pb.cpt substj in
     match c with
       | CTerm ty -> 
@@ -313,9 +316,10 @@ end = struct
   let pi sg ctx t = whnf sg t >>= function
     | Pi (l,x,a,b) -> return (Some (l,x,a,b))
     | Meta _ | App (Meta _, _, _) -> let empty = Basics.empty in
-        new_meta ctx dloc empty CSort >>= fun ms -> (* if !coc may be Kind *)
-        new_meta ctx dloc empty (CTerm ms) >>= fun mt ->
-        add sg dloc empty {ctx=ctx; te=mt; ty=ms;} >>= fun ctx2 ->
+        let ctx0 = Context.to_context ctx in
+        new_meta ctx0 dloc empty (cannot()) >>= fun ms ->
+        new_meta ctx0 dloc empty (CTerm ms) >>= fun mt ->
+        let ctx2 = (dloc,empty,mt)::ctx0 in
         new_meta ctx2 dloc empty CSort >>= fun ml ->
         new_meta ctx2 dloc empty (CTerm ml) >>= fun mk ->
         let pi = mk_Pi dloc empty mt mk in
@@ -376,9 +380,9 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
     | Lam  (l,x,None,b) -> infer sg ctx (mk_Lam l x (Some (mk_Hole l x)) b)
-    | Hole (lc,s) ->
-        M.new_meta ctx lc s CType >>= fun mk ->
-        M.new_meta ctx lc s (CTerm mk) >>= fun mj ->
+    | Hole (lc,s) -> let ctx0 = Context.to_context ctx in
+        M.new_meta ctx0 lc s CType >>= fun mk ->
+        M.new_meta ctx0 lc s (CTerm mk) >>= fun mj ->
         M.return {ctx=ctx; te=mj; ty=mk;}
     | Meta (lc,s,n,ts) as mv -> M.meta_constraint mv >>= fun (ctx0,ty0) ->
         check_subst sg ctx ts ctx0 >>= fun ts' ->
@@ -422,7 +426,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
           aux ((x,jdg.te)::sigma) rho0 delta0
       | _, _ -> assert false
       in
-    aux [] (List.rev ts) (List.rev (Context.to_context ctx0))
+    aux [] (List.rev ts) (List.rev ctx0)
 
 
   (* ********************** PATTERNS *)

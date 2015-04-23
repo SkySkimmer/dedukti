@@ -24,16 +24,20 @@ let empty = { cpt=0; decls=[]; defs=S.identity; }
 
 let pp_problem out pb = Printf.fprintf out "cpt=%i;\n%a\n%a\n" pb.cpt (pp_list "\n" pp_metainfo) pb.decls S.pp pb.defs
 
-(* Monad *)
+(** Monad *)
 type 'a t = problem -> 'a*problem
 
 let return (x:'a) : 'a t = fun pb -> x,pb
 
 let (>>=) (x:'a t) (f:'a -> 'b t) : 'b t = fun pb -> let (x,pb) = x pb in f x pb
 
-(* Methods *)
+let extract f = f empty
 
-let whnf sg t pb = (S.whnf sg pb.defs t,pb)
+let apply pb t = S.apply pb.defs t
+
+let simpl t pb = apply pb t,pb
+
+(** Methods *)
 
 let new_meta ctx l s c pb =
   let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
@@ -84,6 +88,10 @@ let meta_constraint = function
       end
   | _ -> assert false
 
+(** Unification *)
+
+let whnf sg t pb = (S.whnf sg pb.defs t,pb)
+
 let unify sg ctx t c =
   let rec aux ctx t1 t2 = whnf sg t1 >>= fun t1' -> whnf sg t2 >>= fun t2' ->
     if Reduction.are_convertible sg t1' t2'
@@ -107,8 +115,3 @@ let unify sg ctx t c =
         | _ -> aux ctx t (mk_Type dloc) (* bad *)
         end
 
-let extract f = f empty
-
-let apply pb t = S.apply pb.defs t
-
-let simpl t pb = apply pb t,pb

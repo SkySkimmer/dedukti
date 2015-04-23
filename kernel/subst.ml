@@ -58,12 +58,6 @@ let subst (te:term) (u:term) =
     | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,aux k t) ts)
   in aux 0 te
 
-  
-module IntMap = Map.Make(
-struct
-  type t = int
-  let compare = compare
-end)
 
 module S =
 struct

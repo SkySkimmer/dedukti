@@ -1,12 +1,6 @@
 open Basics
 open Term
 
-module IntMap = Map.Make(
-struct
-  type t = int
-  let compare = compare
-end)
-
 module S = struct
   type t = term IntMap.t
   

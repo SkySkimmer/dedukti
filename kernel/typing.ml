@@ -176,10 +176,7 @@ module KMeta : Meta with type 'a t = 'a = struct
   let unify sg ctx t = function
     | CTerm u -> Reduction.are_convertible sg t u
     | CType -> failwith "cannot kernel unify with type"
-    | CSort -> begin match t with
-        | Kind | Type _ -> true
-        | _ -> false
-        end
+    | CSort -> Reduction.are_convertible sg t (mk_Type dloc) || Reduction.are_convertible sg t mk_Kind
   
   let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)

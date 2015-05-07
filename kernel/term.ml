@@ -75,8 +75,8 @@ let pp_context out ctx =
     out (List.rev ctx)
 
 
-type candidate =
-  | CTerm of term
-  | CType
-  | CSort
+type mkind =
+  | MTyped of term
+  | MType
+  | MSort
 

@@ -41,8 +41,8 @@ val pp_context  : out_channel -> context -> unit
 
 (** {3 Unification candidates} *)
 
-type candidate =
-  | CTerm of term
-  | CType
-  | CSort
+type mkind =
+  | MTyped of term
+  | MType
+  | MSort
 

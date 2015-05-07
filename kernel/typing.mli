@@ -46,9 +46,9 @@ module type Meta = sig
   
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
-  val unify : Signature.t -> context -> term -> candidate -> bool t
+  val unify : Signature.t -> context -> term -> mkind -> bool t
   (** [unify sg ctx t c] tries to unify t and c. It may add unsolved constraints to the problem. *)
-  val new_meta : context -> loc -> ident -> candidate -> term t
+  val new_meta : context -> loc -> ident -> mkind -> term t
   
   val meta_constraint : term -> (context * term) t
   

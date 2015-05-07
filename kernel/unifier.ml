@@ -45,10 +45,10 @@ let new_meta ctx l s c pb =
   let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
   let mj = mk_Meta l s pb.cpt substj in
   match c with
-    | CTerm ty -> 
+    | MTyped ty -> 
           (mj,{cpt=pb.cpt+1; decls=(MetaDecl (ctx,pb.cpt,ty))::pb.decls; defs=pb.defs; pairs=pb.pairs;})
-    | CType -> (mj,{cpt=pb.cpt+1; decls=(MetaType (ctx,pb.cpt))::pb.decls; defs=pb.defs; pairs=pb.pairs;})
-    | CSort -> (mj,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs; pairs=pb.pairs;})
+    | MType -> (mj,{cpt=pb.cpt+1; decls=(MetaType (ctx,pb.cpt))::pb.decls; defs=pb.defs; pairs=pb.pairs;})
+    | MSort -> (mj,{cpt=pb.cpt+1; decls=(MetaSort (ctx,pb.cpt))::pb.decls; defs=pb.defs; pairs=pb.pairs;})
 
 let rec accessible n pb = function
   | Kind | Type _ | DB _ | Const _ | Hole _ -> false
@@ -83,7 +83,7 @@ let meta_constraint = function
     with | Not_found -> raise (RefineError (UnknownMeta n))
     end >>= begin function
       | MetaDecl (ctx,_,ty) -> return (ctx,ty)
-      | MetaType (ctx,_) -> new_meta ctx l s CSort >>= fun mk ->
+      | MetaType (ctx,_) -> new_meta ctx l s MSort >>= fun mk ->
           set_decl (MetaDecl (ctx,n,mk)) >>= fun () -> return (ctx,mk)
       | MetaSort (ctx,_) -> set_decl (MetaDecl (ctx,n,mk_Kind)) >>= fun () ->
           set_meta n (mk_Type l) >>= fun _ -> return (ctx,mk_Kind)
@@ -126,9 +126,9 @@ let unify sg ctx t c =
     | None -> return false
   in
   match c with
-    | CTerm u -> aux t u
-    | CType -> failwith "Refine mode: cannot unify with type"
-    | CSort -> begin match t with
+    | MTyped u -> aux t u
+    | MType -> failwith "Refine mode: cannot unify with type"
+    | MSort -> begin match t with
         | Kind | Type _ -> return true
         | _ -> aux t (mk_Type dloc) (* bad *)
         end

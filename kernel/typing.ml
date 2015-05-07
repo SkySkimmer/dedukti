@@ -141,7 +141,7 @@ type judgment = Context.t judgment0
 
 (* ********************** METAS *)
 
-let cannot () = if !coc then CSort else CTerm (mk_Type dloc)
+let cannot () = if !coc then MSort else MTyped (mk_Type dloc)
 
 module type Meta = sig
   type 'a t
@@ -155,8 +155,8 @@ module type Meta = sig
   
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
   
-  val unify : Signature.t -> context -> term -> candidate -> bool t
-  val new_meta : context -> loc -> ident -> candidate -> term t
+  val unify : Signature.t -> context -> term -> mkind -> bool t
+  val new_meta : context -> loc -> ident -> mkind -> term t
   
   val meta_constraint : term -> (context * term) t
   
@@ -174,9 +174,12 @@ module KMeta : Meta with type 'a t = 'a = struct
   let add _ = Context.add
   
   let unify sg ctx t = function
-    | CTerm u -> Reduction.are_convertible sg t u
-    | CType -> failwith "cannot kernel unify with type"
-    | CSort -> Reduction.are_convertible sg t (mk_Type dloc) || Reduction.are_convertible sg t mk_Kind
+    | MTyped u -> Reduction.are_convertible sg t u
+    | MType -> failwith "cannot kernel unify with type"
+    | MSort -> begin match t with
+        | Kind | Type _ -> true
+        | _ -> false
+        end
   
   let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
@@ -215,12 +218,12 @@ end = struct
     | _ -> let empty = Basics.empty in
         let ctx0 = Context.to_context ctx in
         new_meta ctx0 dloc empty (cannot()) >>= fun ms ->
-        new_meta ctx0 dloc empty (CTerm ms) >>= fun mt ->
+        new_meta ctx0 dloc empty (MTyped ms) >>= fun mt ->
         let ctx2 = (dloc,empty,mt)::ctx0 in
-        new_meta ctx2 dloc empty CSort >>= fun ml ->
-        new_meta ctx2 dloc empty (CTerm ml) >>= fun mk ->
+        new_meta ctx2 dloc empty MSort >>= fun ml ->
+        new_meta ctx2 dloc empty (MTyped ml) >>= fun mk ->
         let pi = mk_Pi dloc empty mt mk in
-        unify sg ctx0 t (CTerm pi) >>= begin function
+        unify sg ctx0 t (MTyped pi) >>= begin function
         | true -> return (Some (dloc,empty,mt,mk))
         | false -> return None (* Note that here we have some useless metas polluting the unification. Can we eliminate them? *)
         end
@@ -255,7 +258,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         infer sg ctx a >>= fun jdg_a ->
         M.add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
-        M.unify sg (Context.to_context ctx) jdg_b.ty CSort >>= fun b -> if b
+        M.unify sg (Context.to_context ctx) jdg_b.ty MSort >>= fun b -> if b
           then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
           else raise (TypingError
                          (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty)))
@@ -271,8 +274,8 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
           )
     | Lam  (l,x,None,b) -> infer sg ctx (mk_Lam l x (Some (mk_Hole l x)) b)
     | Hole (lc,s) -> let ctx0 = Context.to_context ctx in
-        M.new_meta ctx0 lc s CType >>= fun mk ->
-        M.new_meta ctx0 lc s (CTerm mk) >>= fun mj ->
+        M.new_meta ctx0 lc s MType >>= fun mk ->
+        M.new_meta ctx0 lc s (MTyped mk) >>= fun mj ->
         M.return {ctx=ctx; te=mj; ty=mk;}
     | Meta (lc,s,n,ts) as mv -> M.meta_constraint mv >>= fun (ctx0,ty0) ->
         check_subst sg ctx ts ctx0 >>= fun ts' ->
@@ -294,7 +297,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
             )
         | _ ->
           infer sg ctx te >>= fun jte ->
-          M.unify sg (Context.to_context ctx) jte.ty (CTerm ty_exp) >>= fun b -> if b
+          M.unify sg (Context.to_context ctx) jte.ty (MTyped ty_exp) >>= fun b -> if b
             then M.return { ctx=ctx; te=jte.te; ty=ty_exp; }
             else raise (TypingError
                             (ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty)))
@@ -395,7 +398,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     let ri2 =
       if SS.is_identity sigma then ri else ( debug "%a" SS.pp sigma; (SS.apply sigma ri 0) ) in
     RMeta.(>>=) (MetaRefine.infer sg ctx ri2)
-    (fun j_ri -> RMeta.(>>=) (RMeta.unify sg (Context.to_context ctx) ty_inf (CTerm j_ri.ty))
+    (fun j_ri -> RMeta.(>>=) (RMeta.unify sg (Context.to_context ctx) ty_inf (MTyped j_ri.ty))
     (function
       | true -> RMeta.return (ctx,ri)
       | false -> raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
@@ -409,7 +412,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
   let j_ri = KRefine.infer sg ctx ri2 in
-    if KMeta.unify sg (Context.to_context ctx) ty_inf (CTerm j_ri.ty)
+    if KMeta.unify sg (Context.to_context ctx) ty_inf (MTyped j_ri.ty)
       then ()
       else raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 

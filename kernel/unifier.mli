@@ -22,9 +22,9 @@ val simpl : term -> term t
 
 val whnf : Signature.t -> term -> term t
 
-val unify : Signature.t -> context -> term -> candidate -> bool t
+val unify : Signature.t -> context -> term -> mkind -> bool t
 
-val new_meta : context -> loc -> ident -> candidate -> term t
+val new_meta : context -> loc -> ident -> mkind -> term t
 
 val meta_constraint : term -> (context*term) t
 

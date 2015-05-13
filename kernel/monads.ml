@@ -61,6 +61,14 @@ module Trans_IO (M:EffectS) (T:MonadTrans with type 'a m = 'a M.t)
   let effectful f = T.lift (M.effectful f)
 end
 
+module Trans_Trans (T1:MonadTrans)(T2:MonadTrans with type 'a m = 'a T1.t)
+ : MonadTrans with type 'a m = 'a T1.m and type 'a t = 'a T2.t = struct
+  type 'a m = 'a T1.m
+  type 'a t = 'a T2.t
+  
+  let lift m = T2.lift (T1.lift m)
+end
+
 type ('a,'b,'e) list_view =
   | Nil of 'e
   | Cons of 'a*('e -> 'b)

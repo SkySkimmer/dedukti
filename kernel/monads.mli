@@ -42,6 +42,9 @@ end
 module Trans_IO (M:EffectS) (T:MonadTrans with type 'a m = 'a M.t)
  : EffectS with type 'a t = 'a T.t
 
+module Trans_Trans (T1:MonadTrans)(T2:MonadTrans with type 'a m = 'a T1.t)
+ : MonadTrans with type 'a m = 'a T1.m and type 'a t = 'a T2.t
+
 type ('a,'b,'e) list_view =
   | Nil of 'e
   | Cons of 'a*('e -> 'b)

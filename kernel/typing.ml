@@ -203,9 +203,10 @@ module RMeta : sig
   
   val apply : problem -> term -> term
 end = struct
+  include Unif_core
   include Unifier
 
-  let fold f x l = List.fold_left (fun a b -> a >>= fun a -> f a b) (return x) l
+  let extract m = run (m >>= fun x -> solve >>= fun () -> return x)
 
   let add sg l x jdg = let ctx0 = Context.to_context jdg.ctx in
     unify sg ctx0 jdg.ty (cannot()) >>= fun b ->

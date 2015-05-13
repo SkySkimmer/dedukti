@@ -31,10 +31,10 @@ let pp_context2 out = function
   | (_::_) as ctx ->
     Printf.fprintf out " in context:\n%a" pp_context ctx
 
-let fail_refine_error err = 
-  let open Unifier in
+let fail_unification_error err = 
+  let open Unif_core in
     match err with
-      | UnknownMeta n -> fail dloc "Unknown meta ?_%i encountered." n
+      | GenericFail -> fail dloc "Uncaught generic unification failure"
 
 let fail_typing_error err =
   let open Typing in
@@ -120,7 +120,7 @@ let fail_signature_error err =
 let fail_env_error = function
   | Env.EnvErrorSignature e -> fail_signature_error e
   | Env.EnvErrorType e -> fail_typing_error e
-  | Env.EnvErrorRefine e -> fail_refine_error e
+  | Env.EnvErrorUnify e -> fail_unification_error e
   | Env.KindLevelDefinition (lc,id) ->
     fail lc "Cannot add a rewrite rule for '%a' since it is a kind." pp_ident id
 

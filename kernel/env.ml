@@ -2,11 +2,11 @@ open Basics
 open Term
 open Rule
 open Typing
-open Unifier
+open Unif_core
 open Signature
 
 type env_error =
-  | EnvErrorRefine of refine_error
+  | EnvErrorUnify of Unif_core.unification_error
   | EnvErrorType of typing_error
   | EnvErrorSignature of signature_error
   | KindLevelDefinition of loc*ident
@@ -56,14 +56,14 @@ let declare_constant l id ty : (unit,env_error) error =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let declare_definable l id ty : (unit,env_error) error =
   try OK ( _declare_definable l id (inference !sg ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let define l id te ty_opt =
   try
@@ -79,7 +79,7 @@ let define l id te ty_opt =
   with
   | SignatureError e -> Err (EnvErrorSignature e)
   | TypingError e -> Err (EnvErrorType e)
-  | RefineError e -> Err (EnvErrorRefine e)
+  | UnificationError e -> Err (EnvErrorUnify e)
 
 let define_op l id te ty_opt =
   try
@@ -97,21 +97,21 @@ let add_rules (rules: rule list) : (unit,env_error) error =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let infer te =
   try  OK (inference !sg te).ty
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let check te ty =
   try OK (ignore(checking !sg te ty))
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let whnf te =
   try
@@ -119,7 +119,7 @@ let whnf te =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let hnf te =
   try
@@ -127,7 +127,7 @@ let hnf te =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let snf te =
   try
@@ -135,7 +135,7 @@ let snf te =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let unsafe_snf te = Reduction.snf !sg te
 
@@ -145,7 +145,7 @@ let one te =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)
 
 let are_convertible te1 te2 =
   try
@@ -155,4 +155,4 @@ let are_convertible te1 te2 =
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
-    | RefineError e -> Err (EnvErrorRefine e)
+    | UnificationError e -> Err (EnvErrorUnify e)

@@ -78,6 +78,7 @@ module type StateS = sig
 
   val get : state t
   val set : state -> unit t
+  val modify : (state -> state) -> unit t
 end
 
 module StateF (M:Monad) (S:sig type state end) : sig

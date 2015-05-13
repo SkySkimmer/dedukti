@@ -130,6 +130,7 @@ module type StateS = sig
 
   val get : state t
   val set : state -> unit t
+  val modify : (state -> state) -> unit t
 end
 
 module StateF (M:Monad) (S:sig type state end) = struct
@@ -153,7 +154,10 @@ module StateF (M:Monad) (S:sig type state end) = struct
   
   let set s =
     { k = fun c _ -> c () s }
-  
+
+  let modify f =
+    { k = fun c s -> c () (f s) }
+
   let run {k} s =
     k (fun x s -> M.return (x,s)) s
 end

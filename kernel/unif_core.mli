@@ -3,7 +3,9 @@ open Term
 open Monads
 
 type unification_error =
-  | GenericFail
+  | CannotSolveDeferred
+  | Not_Unifiable
+  | Not_Applicable
 
 exception UnificationError of unification_error
 

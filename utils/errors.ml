@@ -34,7 +34,9 @@ let pp_context2 out = function
 let fail_unification_error err = 
   let open Unif_core in
     match err with
-      | GenericFail -> fail dloc "Uncaught generic unification failure"
+      | CannotSolveDeferred -> fail dloc "Cannot solve deferred unification constraints."
+      | Not_Unifiable -> fail dloc "Uncaught unification failure."
+      | Not_Applicable -> fail dloc "Uncaught unification rule mismatch."
 
 let fail_typing_error err =
   let open Typing in

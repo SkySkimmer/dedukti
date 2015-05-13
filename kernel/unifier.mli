@@ -2,7 +2,9 @@ open Basics
 open Term
 open Unif_core
 
-val unify : Signature.t -> context -> term -> mkind -> bool t
+val unify : Signature.t -> context -> term -> term -> bool t
+
+val unify_sort : Signature.t -> context -> term -> bool t
 
 val solve : unit t
 

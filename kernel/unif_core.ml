@@ -2,7 +2,7 @@ open Basics
 open Term
 open Monads
 
-module S = Msubst.S
+module S = Msubst
 
 type unification_error =
   | GenericFail

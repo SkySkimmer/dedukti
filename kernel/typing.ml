@@ -132,7 +132,7 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
-  val zero : typing_error -> 'a t
+  val fail : typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
   
@@ -156,7 +156,7 @@ module KMeta : Meta with type 'a t = 'a = struct
   let return x = x
   let (>>=) x f = f x
 
-  let zero e = raise (TypingError e)
+  let fail e = raise (TypingError e)
 
   let fold = List.fold_left
   
@@ -172,10 +172,10 @@ module KMeta : Meta with type 'a t = 'a = struct
     | Pi (l,x,a,b) -> Some (l,x,a,b)
     | _ -> None
     
-  let new_meta ctx l s _ = zero (MetaInKernel (l,s))
+  let new_meta ctx l s _ = fail (MetaInKernel (l,s))
   
   let meta_constraint = function
-    | Meta (l,s,_,_) -> zero (MetaInKernel (l,s))
+    | Meta (l,s,_,_) -> fail (MetaInKernel (l,s))
     | _ -> assert false
 
   let simpl x = x
@@ -193,6 +193,8 @@ end = struct
   include Unif_core
   include Unifier
 
+  let fail = zero
+
   let extract m = run (m >>= fun x -> solve >>= fun () -> return x)
 
   let unify_annot sg ctx t = if !coc then unify_sort sg ctx t else unify sg ctx t (mk_Type dloc)
@@ -201,7 +203,7 @@ end = struct
   let add sg l x jdg = let ctx0 = Context.to_context jdg.ctx in
     unify_annot sg ctx0 jdg.ty >>= fun b ->
     if b then return (Context.unsafe_add jdg.ctx l x jdg.te)
-    else zero (ConvertibilityError (jdg.te, ctx0, mk_Type dloc, jdg.ty))
+    else fail (ConvertibilityError (jdg.te, ctx0, mk_Type dloc, jdg.ty))
 
   let pi sg ctx t = whnf sg t >>= function
     | Pi (l,x,a,b) -> return (Some (l,x,a,b))
@@ -235,12 +237,12 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
 
   let (>>=) = M.(>>=)
   
-  let zero = M.zero
+  let fail = M.fail
   
   (* ********************** TERMS *)
 
   let rec infer sg (ctx:Context.t) : term -> judgment t = function
-    | Kind -> zero (KindIsNotTypable)
+    | Kind -> fail (KindIsNotTypable)
     | Type l -> M.return { ctx=ctx; te=mk_Type l; ty= mk_Kind; }
     | DB (l,x,n) -> M.return { ctx=ctx; te=mk_DB l x n; ty= Context.get_type ctx l x n }
     | Const (l,md,id) -> M.return { ctx=ctx; te=mk_Const l md id; ty=Signature.get_type sg l md id; }
@@ -252,13 +254,13 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         infer sg ctx2 b >>= fun jdg_b ->
         M.unify_sort sg (Context.to_context ctx) jdg_b.ty >>= fun b -> if b
           then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
-          else zero (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty))
+          else fail (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty))
     | Lam  (l,x,Some a,b) ->
         infer sg ctx a >>= fun jdg_a ->
         M.add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
           ( match jdg_b.ty with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
-              | Kind -> zero (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx))
+              | Kind -> fail (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx))
               | _ -> M.return { ctx=ctx; te=mk_Lam l x (Some jdg_a.te) jdg_b.te;
                        ty=mk_Pi l x jdg_a.te jdg_b.ty }
           )
@@ -282,13 +284,13 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
                     (* (x) might as well be Kind but here we do not care*)
                     check sg u { ctx=ctx2; te=b; ty=mk_Type dloc (* (x) *); } >>= fun jdg_b ->
                       M.return { ctx=ctx; te=mk_Lam l x None jdg_b.te; ty=pi; }
-                | None -> zero (ProductExpected (te,Context.to_context jty.ctx,jty.te))
+                | None -> fail (ProductExpected (te,Context.to_context jty.ctx,jty.te))
             )
         | _ ->
           infer sg ctx te >>= fun jte ->
           M.unify sg (Context.to_context ctx) jte.ty ty_exp >>= fun b -> if b
             then M.return { ctx=ctx; te=jte.te; ty=ty_exp; }
-            else zero (ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty))
+            else fail (ConvertibilityError (te,Context.to_context ctx,ty_exp,jte.ty))
 
   and check_app sg jdg_f consumed_te consumed_ty args = 
     match args with
@@ -296,7 +298,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
       | u::atl -> begin M.pi sg jdg_f.ctx jdg_f.ty >>= function
         | Some (_,_,a,b) -> check sg u {ctx=jdg_f.ctx; te=a; ty=mk_Type dloc} >>= fun u_inf ->
             check_app sg {ctx=jdg_f.ctx; te=mk_App jdg_f.te u_inf.te []; ty=Subst.subst b u_inf.te;} (u_inf.te::consumed_te) (a::consumed_ty) atl
-        | None -> zero (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty))
+        | None -> fail (ProductExpected (jdg_f.te,Context.to_context jdg_f.ctx,jdg_f.ty))
         end
 
   and check_subst sg ctx ts ctx0 =
@@ -323,7 +325,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args >>= fun (_,ty,si) ->
       M.return (ty,si)
     | Brackets t -> infer sg ctx t >>= fun jdg -> M.return ( jdg.ty, SS.identity )
-    | Lambda (l,x,p) -> zero (DomainFreeLambda l)
+    | Lambda (l,x,p) -> fail (DomainFreeLambda l)
 
   and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : (term*term*SS.t) t =
     M.pi sg ctx ty_f >>= function
@@ -333,7 +335,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
           let b2 = SS.apply sigma b (q+1) in
           let arg2 = SS.apply sigma arg' q in
           M.return ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
-      | None -> zero (ProductExpected (f,Context.to_context ctx,ty_f))
+      | None -> fail (ProductExpected (f,Context.to_context ctx,ty_f))
 
   and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pattern) : SS.t t =
     match pat with
@@ -343,7 +345,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
             | Some (l,x,a,b) ->
                 let ctx2 = Context.unsafe_add ctx l x a in
                   check_pattern sg ctx2 (q+1) b sigma0 p
-            | None -> zero (ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty))
+            | None -> fail (ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty))
         end
      | Brackets t ->
        check sg t { ctx; te=exp_ty; ty=Term.mk_Type dloc; } >>= fun _ ->
@@ -355,7 +357,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
           M.simpl inf_ty >>= fun inf_ty ->
             match pseudo_unification sg q exp_ty inf_ty with
               | None ->
-                zero (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty))
+                fail (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty))
               | Some sigma2 -> M.return (SS.merge sigma1 sigma2)
         end
 end
@@ -389,7 +391,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     (fun j_ri -> RMeta.(>>=) (RMeta.unify sg (Context.to_context ctx) ty_inf j_ri.ty)
     (function
       | true -> RMeta.return (ctx,ri)
-      | false -> RMeta.zero (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty))
+      | false -> RMeta.fail (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty))
     ))))) in
   let ctx =
     List.fold_left (fun ctx (l,id,ty) -> Context.add l id (KRefine.infer sg ctx (RMeta.apply pb ty)) )
@@ -402,7 +404,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
   let j_ri = KRefine.infer sg ctx ri2 in
     if KMeta.unify sg (Context.to_context ctx) ty_inf j_ri.ty
       then ()
-      else KMeta.zero (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty))
+      else KMeta.fail (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty))
 
 (* ********************** JUDGMENTS *)
 (*

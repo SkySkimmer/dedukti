@@ -12,6 +12,9 @@ type typing_error =
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
+  | UnknownMeta of loc*ident*int
+  | ConvRule_Bad of term*term
+  | DecomposeDomainFreeLambdas
   | CannotSolveDeferred
   | Not_Unifiable
   | Not_Applicable
@@ -55,7 +58,10 @@ val inspect : pair option t
 type ('a,'b) sum =
   | Inl of 'a
   | Inr of 'b
-(* pair_conv (Inl t) checks if the left term of the current pair is convertible with t, then replaces it with t, else fails *)
+(*
+pair_conv (Inl t) checks if the left term of the current pair is convertible with t, then replaces it with t, else fails
+Not really safe: t could be illtyped
+*)
 val pair_conv : Signature.t -> (term,term) sum -> unit t
 
 (*

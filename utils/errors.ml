@@ -62,6 +62,9 @@ let fail_typing_error err =
           fail lc "Cannot infer the type of domain-free lambda."
       | MetaInKernel (lc,s) -> fail lc "Unexpected metavariable \"%a\" in kernel mode." pp_ident s
       | InferSortMeta (lc,s) -> fail lc "TODO: implement type inference for sort meta (hit \"%a\")." pp_ident s
+      | UnknownMeta (lc,s,n) -> fail lc "Unknown meta ?_%i{\"%a\"} encountered." n pp_ident s
+      | ConvRule_Bad (t1,t2) -> fail dloc "Attempted to replace %a by non convertible term %a." pp_term t2 pp_term t1
+      | DecomposeDomainFreeLambdas -> fail dloc "Cannot decompose a pair of domain free lambdas."
       | CannotSolveDeferred -> fail dloc "Cannot solve deferred constraints."
       | Not_Unifiable -> fail dloc "Non unifiable pair hit."
       | Not_Applicable -> fail dloc "All rules not applicable."

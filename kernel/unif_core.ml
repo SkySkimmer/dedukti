@@ -99,17 +99,35 @@ let inspect = get >>= function
   | { pairs = p::_ } -> return (Some p)
   | _ -> return None
 
-
-type ('a,'b) sum =
-  | Inl of 'a
-  | Inr of 'b
-(* pair_conv (Inl t) (resp Inr t) checks if the left (resp right) term of the current pair is convertible with t, then replaces it with t, else fails *)
-let pair_conv sg o = get >>= fun pb -> match pb.pairs with
-  | (ctx,lop,rop)::rem -> begin match o with
-      | Inl t -> if Reduction.are_convertible sg t lop then return (ctx,t,rop) else zero (ConvRule_Bad (t,lop))
-      | Inr t -> if Reduction.are_convertible sg t rop then return (ctx,lop,t) else zero (ConvRule_Bad (t,rop))
-      end >>= fun (ctx,lop,rop) -> set { pb with pairs=(ctx,lop,rop)::rem }
+(* f may do backtracking but may not modify the state *)
+let pair_modify f = get >>= fun pb -> match pb.pairs with
+  | p::rem -> f p >>= fun l -> set { pb with pairs=List.append l rem }
   | _ -> zero Not_Applicable
+
+type side = LEFT | RIGHT
+
+let pair_modify_side side f = pair_modify (fun (ctx,lop,rop) -> match side with
+  | LEFT -> f lop >>= fun lop -> return [ctx,lop,rop]
+  | RIGHT -> f rop >>= fun rop -> return [ctx,lop,rop])
+
+
+(* Tries to unfold the meta at the head of the left (resp right) term *)
+let meta_delta side = let delta t = get >>= fun pb -> begin match t with
+  | Meta _ as m -> begin match S.meta_val pb.sigma m with
+      | Some m' -> return m'
+      | None -> zero Not_Applicable
+      end
+  | App (Meta _ as m,a,args) -> begin match S.meta_val pb.sigma m with
+      | Some m' -> return (mk_App m' a args)
+      | None -> zero Not_Applicable
+      end
+  | _ -> zero Not_Applicable
+  end in pair_modify_side side delta
+
+let step_reduce sg side = let step t = match Reduction.one_step sg t with
+  | Some t' -> return t'
+  | None -> zero Not_Applicable
+  in pair_modify_side side step
 
 (*
 Decompose the pair according to the common constructor of the terms:
@@ -119,27 +137,33 @@ Decompose the pair according to the common constructor of the terms:
 - etc
 *)
 
-let pair_decompose = get >>= fun pb -> match pb.pairs with
-  | (ctx,t1,t2)::rem -> begin match t1,t2 with
-      | Kind, Kind | Type _, Type _ -> return []
-      | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> return []
-      | DB (_,_,n), DB (_,_,n') when (n=n') -> return []
-      | App (f,a,args), App (f',a',args') ->
-        begin match try Some (List.rev_map2 (fun t1 t2 -> (ctx,t1,t2)) (f::a::args) (f'::a'::args')) with | Invalid_argument _ -> None with
-            | Some l -> return l
-            | None -> zero Not_Applicable
-            end
-      | Lam (_,x,Some a,b), Lam (_,_,Some a',b') -> return [((dloc,x,a)::ctx,b,b');(ctx,a,a')]
-      | Lam (_,x,Some a,b), Lam (_,_,None,b') -> return [(dloc,x,a)::ctx,b,b']
-      | Lam (_,_,None,b), Lam (_,y,Some a',b') -> return [((dloc,y,a')::ctx,b,b')]
-      | Lam _, Lam _ -> zero DecomposeDomainFreeLambdas
-      | Pi (_,x,a,b), Pi (_,_,a',b') -> return [((dloc,x,a)::ctx,b,b');(ctx,a,a')]
-      | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> effectful (fun () -> failwith "TODO: decompose meta pair")
-      | _, _ -> zero Not_Unifiable
-      end >>= fun l -> set {pb with pairs = List.rev_append l rem}
-  | [] -> zero Not_Applicable
+let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
+  | Kind, Kind | Type _, Type _ -> return []
+  | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> return []
+  | DB (_,_,n), DB (_,_,n') when (n=n') -> return []
+  | App (f,a,args), App (f',a',args') ->
+    begin match try Some (List.map2 (fun t1 t2 -> (ctx,t1,t2)) (f::a::args) (f'::a'::args')) with | Invalid_argument _ -> None with
+        | Some l -> return l
+        | None -> zero Not_Applicable
+        end
+  | Lam (_,x,Some a,b), Lam (_,_,Some a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
+  | Lam (_,x,Some a,b), Lam (_,_,None,b') -> return [(dloc,x,a)::ctx,b,b']
+  | Lam (_,_,None,b), Lam (_,y,Some a',b') -> return [((dloc,y,a')::ctx,b,b')]
+  | Lam _, Lam _ -> zero DecomposeDomainFreeLambdas
+  | Pi (_,x,a,b), Pi (_,_,a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
+  | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> effectful (fun () -> failwith "TODO: decompose meta pair")
+  | _, _ -> zero Not_Unifiable
+  in pair_modify pair_decompose
 
-(* Tries to unfold the meta at the head of the left (resp right) term *)
-let pair_meta_unfold side = assert false
-
+let meta_same_same = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
+  | Meta (_,_,n,ts), Meta (_,_,n',ts') when (n=n') ->
+    let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
+      if b then return [] else zero Not_Applicable
+  | App (Meta (_,_,n,ts),a,args), App (Meta (_,_,n',ts'),a',args') when (n=n') ->
+    let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
+      if b then match try Some (List.map2 (fun t1 t2 -> ctx,t1,t2) (a::args) (a'::args')) with | Invalid_argument _ -> None with
+          | Some l -> return l
+          | None -> zero Not_Applicable
+          else zero Not_Applicable
+  | _,_ -> zero Not_Applicable)
 

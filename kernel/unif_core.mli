@@ -54,15 +54,7 @@ val simpl : term -> term t
 (* returns Nothing if there are no (unsolved) disagreement pairs *)
 val inspect : pair option t
 
-
-type ('a,'b) sum =
-  | Inl of 'a
-  | Inr of 'b
-(*
-pair_conv (Inl t) checks if the left term of the current pair is convertible with t, then replaces it with t, else fails
-Not really safe: t could be illtyped
-*)
-val pair_conv : Signature.t -> (term,term) sum -> unit t
+type side = LEFT | RIGHT
 
 (*
 Decompose the pair according to the common constructor of the terms:
@@ -71,9 +63,12 @@ Decompose the pair according to the common constructor of the terms:
 - Psi,Type,Type -> []
 - etc
 *)
-val pair_decompose : unit t
+val decompose : unit t
 
 (* Tries to unfold the meta at the head of the left (resp right) term *)
-val pair_meta_unfold : (unit,unit) sum -> unit t
+val meta_delta : side -> unit t
 
+val step_reduce : Signature.t -> side -> unit t
+
+val meta_same_same : unit t
 

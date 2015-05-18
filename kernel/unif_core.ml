@@ -28,13 +28,14 @@ module M0 = BacktrackF(IO)(Types)
 module M = StateF(M0)(Types)
 include M
 
-include (MonadF(M) : module type of MonadF(M) with type 'a t := 'a t)
+include MonadF(M)
 
-module MIO = Trans_IO(IO)(Trans_Trans(M0)(M))
-include (MIO : module type of MIO with type 'a t := 'a t)
+include M.EffectT(struct
+  type 'a t = 'a M0.t
+  include M0.EffectT(IO)
+end)
 
-module MSB = State_Backtrack(M0)(M0)(Types)
-include (MSB : module type of MSB with type 'a t := 'a t)
+include M.BacktrackT(M0)
 
 let run m = match IO.run (M0.run (M.run m fresh)) () with
   | Nil e -> raise (UnificationError e)

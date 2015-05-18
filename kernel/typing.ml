@@ -1,6 +1,7 @@
 open Basics
 open Term
 open Rule
+open Unif_core
 
 let coc = ref false
 
@@ -10,22 +11,6 @@ let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n 
 
 (* revseq n k = [n;n-1;..;k+1;k] *)
 let rec revseq n k = if n<k then [] else n::(revseq (n-1) k)
-
-
-(* ********************** ERROR MESSAGES *)
-
-type typing_error =
-  | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
-  | DomainFreeLambda of loc
-  | MetaInKernel of loc*ident
-  | InferSortMeta of loc*ident
-
-exception TypingError of typing_error
 
 (* **** PSEUDO UNIFICATION ********************** *)
 

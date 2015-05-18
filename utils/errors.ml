@@ -31,15 +31,8 @@ let pp_context2 out = function
   | (_::_) as ctx ->
     Printf.fprintf out " in context:\n%a" pp_context ctx
 
-let fail_unification_error err = 
-  let open Unif_core in
-    match err with
-      | CannotSolveDeferred -> fail dloc "Cannot solve deferred unification constraints."
-      | Not_Unifiable -> fail dloc "Uncaught unification failure."
-      | Not_Applicable -> fail dloc "Uncaught unification rule mismatch."
-
 let fail_typing_error err =
-  let open Typing in
+  let open Unif_core in
     match err with
       | KindIsNotTypable -> fail dloc "Kind is not typable."
       | ConvertibilityError (te,ctx,exp,inf) ->
@@ -69,6 +62,9 @@ let fail_typing_error err =
           fail lc "Cannot infer the type of domain-free lambda."
       | MetaInKernel (lc,s) -> fail lc "Unexpected metavariable \"%a\" in kernel mode." pp_ident s
       | InferSortMeta (lc,s) -> fail lc "TODO: implement type inference for sort meta (hit \"%a\")." pp_ident s
+      | CannotSolveDeferred -> fail dloc "Cannot solve deferred constraints."
+      | Not_Unifiable -> fail dloc "Non unifiable pair hit."
+      | Not_Applicable -> fail dloc "All rules not applicable."
 
 let fail_dtree_error err =
   let open Dtree in
@@ -122,7 +118,6 @@ let fail_signature_error err =
 let fail_env_error = function
   | Env.EnvErrorSignature e -> fail_signature_error e
   | Env.EnvErrorType e -> fail_typing_error e
-  | Env.EnvErrorUnify e -> fail_unification_error e
   | Env.KindLevelDefinition (lc,id) ->
     fail lc "Cannot add a rewrite rule for '%a' since it is a kind." pp_ident id
 

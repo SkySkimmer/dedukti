@@ -5,8 +5,7 @@ open Term
 open Signature
 
 type env_error =
-  | EnvErrorUnify of Unif_core.unification_error
-  | EnvErrorType of Typing.typing_error
+  | EnvErrorType of Unif_core.typing_error
   | EnvErrorSignature of signature_error
   | KindLevelDefinition of loc*ident
 

@@ -6,19 +6,6 @@ open Basics
 
 val coc : bool ref
 
-type typing_error =
-  | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
-  | DomainFreeLambda of loc
-  | MetaInKernel of loc*ident
-  | InferSortMeta of loc*ident
-
-exception TypingError of typing_error
-
 type 'a judgment0 = private { ctx:'a; te:term; ty: term; }
 
 module Context :

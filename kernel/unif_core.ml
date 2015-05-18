@@ -4,12 +4,21 @@ open Monads
 
 module S = Msubst
 
-type unification_error =
+type typing_error =
+  | KindIsNotTypable
+  | ConvertibilityError of term*context*term*term
+  | VariableNotFound of loc*ident*int*context
+  | SortExpected of term*context*term
+  | ProductExpected of term*context*term
+  | InexpectedKind of term*context
+  | DomainFreeLambda of loc
+  | MetaInKernel of loc*ident
+  | InferSortMeta of loc*ident
   | CannotSolveDeferred
   | Not_Unifiable
   | Not_Applicable
 
-exception UnificationError of unification_error
+exception TypingError of typing_error
 
 type mdecl = context*int*mkind
 
@@ -21,7 +30,7 @@ let fresh = {cpt=0; decls=[]; sigma=S.identity; pairs=[]; }
 
 (* A monad with effects, backtracking and restricted state operations *)
 module Types = struct
-  type err = unification_error
+  type err = typing_error
   type state = problem
 end
 module M0 = BacktrackF(IO)(Types)
@@ -38,7 +47,7 @@ end)
 include M.BacktrackT(M0)
 
 let run m = match IO.run (M0.run (M.run m fresh)) () with
-  | Nil e -> raise (UnificationError e)
+  | Nil e -> raise (TypingError e)
   | Cons (r,_) -> r
 
 (* monad basic operations end here *)
@@ -53,7 +62,9 @@ let new_meta ctx lc s k = get >>= fun pb ->
   set { pb with cpt=pb.cpt+1; decls=(ctx,pb.cpt,k)::pb.decls } >>= fun () ->
   return mj
 
-let meta_constraint t = assert false
+let meta_constraint = function
+  | Meta (lc,s,n,_) -> assert false
+  | _ -> assert false
 
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)

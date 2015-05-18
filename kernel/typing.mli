@@ -27,6 +27,8 @@ module type Meta = sig
   val return : 'a -> 'a t
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
   
+  val zero : Unif_core.typing_error -> 'a t
+
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
   
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t

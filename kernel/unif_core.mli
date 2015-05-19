@@ -72,3 +72,5 @@ val step_reduce : Signature.t -> side -> unit t
 
 val meta_same_same : unit t
 
+val meta_same : unit t
+

@@ -4,6 +4,8 @@ open Monads
 
 module S = Msubst
 
+let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
+
 type typing_error =
   | KindIsNotTypable
   | ConvertibilityError of term*context*term*term
@@ -99,9 +101,9 @@ let inspect = get >>= function
   | { pairs = p::_ } -> return (Some p)
   | _ -> return None
 
-(* f may do backtracking but may not modify the state *)
+(* the first pair is popped and used for f's argument *)
 let pair_modify f = get >>= fun pb -> match pb.pairs with
-  | p::rem -> f p >>= fun l -> set { pb with pairs=List.append l rem }
+  | p::rem -> set { pb with pairs=rem } >>= fun () -> f p >>= fun l -> modify (fun pb -> { pb with pairs=List.append l pb.pairs })
   | _ -> zero Not_Applicable
 
 type side = LEFT | RIGHT
@@ -166,4 +168,69 @@ let meta_same_same = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
           | None -> zero Not_Applicable
           else zero Not_Applicable
   | _,_ -> zero Not_Applicable)
+
+(* Count occurences of true before index n, returning None if nth l n = false *)
+let sanitize_index l n = let rec aux n c = function
+  | [] -> None
+  | b::l -> if n=0 then if b then Some c else None
+            else aux (n-1) (if b then c+1 else c) l
+  in aux n 0 l
+
+(* if t lives in context ctx, sanitize_term l t lives in ctx filtered by l *)
+let rec sanitize_term l = function
+  | Kind | Type _ | Const _ | Hole _ as t -> Some t
+  | DB (lc,x,n) -> map_opt (fun n -> mk_DB lc x n) (sanitize_index l n)
+  | App (f,a,args) -> Opt.(Opt.fold (fun args t -> map_opt (fun t -> t::args) (sanitize_term l t))
+                                    [] (List.rev_append args [a;f]) >>= function
+      | f::a::args -> Some (mk_App f a args)
+      | _ -> assert false)
+  | Lam (lc,x,Some a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x (Some a) b)))
+  | Lam (lc,x,None,b) -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x None b))
+  | Pi (lc,x,a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Pi lc x a b)))
+  | Meta (lc,s,n,ts) -> Opt.(Opt.fold (fun ts (x,t) -> map_opt (fun t -> (x,t)::ts) (sanitize_term l t))
+                                 [] (List.rev ts) >>= fun ts ->
+      Some (mk_Meta lc s n ts))
+
+let rec sanitize_context l ctx = match l,ctx with
+  | b::l, (lc,x,ty)::ctx -> let (l,ctx) = sanitize_context l ctx in
+      if b then begin match sanitize_term l ty with
+        | Some ty -> true::l,(lc,x,ty)::ctx
+        | None -> false::l,ctx
+        end
+      else false::l,ctx
+  | [],[] -> [],[]
+  | _,_ -> assert false
+
+let subst_intersection ts ts' = List.map2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
+
+let context_project l ctx = let rec aux n acc = function
+  | true::l,(lc,x,_)::ctx -> aux (n+1) ((mk_DB lc x n)::acc) (l,ctx)
+  | false::l,(lc,x,_)::ctx -> aux n acc (l,ctx)
+  | [],[] -> List.rev acc
+  | _ -> assert false
+  in aux 0 [] (l,ctx)
+
+let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
+  | Meta (lc,s,n,ts), Meta (_,_,n',ts') when (n=n') -> return (lc,s,n,ts,ts',[],[])
+  | App (Meta (lc,s,n,ts),a,args), App (Meta (_,_,n',ts'),a',args') when (n=n') -> return (lc,s,n,ts,ts',a::args,a'::args')
+  | _,_ -> zero Not_Applicable
+  end >>= fun (lc,s,n,ts,ts',args,args') -> 
+  get >>= fun pb -> match get_decl pb.decls n with
+    | Some (mctx0,m) -> let inter = subst_intersection ts ts' in
+        let (inter,mctx) = sanitize_context inter mctx0 in
+        let m = match m with
+          | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term inter ty)
+          | MType | MSort -> Some m in
+        begin match m with
+          | Some m -> new_meta mctx lc s m >>= fun mj ->
+              let mj = subst_l (context_project inter mctx0) 0 mj in
+              set_meta n mj >>= fun () ->
+              begin match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
+                | Some l -> return l
+                | None -> zero Not_Applicable
+                end
+          | None -> zero Not_Applicable
+          end
+    | None -> raise (TypingError (UnknownMeta (lc,s,n))))
+
 

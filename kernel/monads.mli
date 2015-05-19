@@ -40,6 +40,11 @@ module IO : sig
   val run : 'a t -> unit -> 'a
 end
 
+module Opt : sig
+  include Monad with type 'a t = 'a option
+  include MonadS with type 'a t := 'a t
+end
+
 module type MonadT = sig
   type 'a m
   type 'a t

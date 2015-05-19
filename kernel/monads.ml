@@ -48,6 +48,17 @@ module IO = struct
   let run f () = f ()
 end
 
+module Opt = struct
+  module M = struct 
+    type 'a t = 'a option
+    let return x = Some x
+    let (>>=) m f = bind_opt f m
+    end
+  include M
+  include (MonadF(M) : module type of MonadF(M) with type 'a t := 'a t)
+end
+  
+
 module type MonadT = sig
   type 'a m
   type 'a t

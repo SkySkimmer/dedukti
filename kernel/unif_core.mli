@@ -74,3 +74,8 @@ val meta_same_same : unit t
 
 val meta_same : unit t
 
+val meta_fo : side -> unit t
+
+(*
+val meta_inst : Signature.t -> side -> unit t
+*)

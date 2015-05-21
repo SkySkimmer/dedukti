@@ -63,6 +63,8 @@ module type BacktrackS = sig
   val plus : 'a t -> (err -> 'a t) -> 'a t
   
   val split : 'a t -> ('a, 'a t, err) list_view t
+  
+  val once : 'a t -> 'a t
 end
 
 module type StateS = sig

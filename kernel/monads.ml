@@ -14,7 +14,7 @@ module type MonadS = sig
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 end
 
-module MonadF (M:Monad) = struct
+module MonadF (M:Monad) : MonadS with type 'a t := 'a M.t = struct
   include M
   
   let rec fold f acc = function
@@ -55,7 +55,7 @@ module Opt = struct
     let (>>=) m f = bind_opt f m
     end
   include M
-  include (MonadF(M) : module type of MonadF(M) with type 'a t := 'a t)
+  include MonadF(M)
 end
   
 
@@ -77,6 +77,8 @@ module type BacktrackS = sig
   val plus : 'a t -> (err -> 'a t) -> 'a t
   
   val split : 'a t -> ('a, 'a t, err) list_view t
+  
+  val once : 'a t -> 'a t
 end
 
 module type StateS = sig
@@ -118,6 +120,10 @@ module BacktrackF (M:Monad) (E:sig type err end) = struct
     let sk x fk = M.return (Cons (x, fun e -> lift (fk e) >>= reflect)) in
     let fk e = M.return (Nil e) in
       lift (m.k sk fk)
+
+  let once m = split m >>= function
+    | Nil e -> zero e
+    | Cons (x,_) -> return x
 
   module EffectT(E:EffectS with type 'a t = 'a M.t) = struct
     let effectful f = lift (E.effectful f)
@@ -177,6 +183,9 @@ module StateF (M:Monad) (S:sig type state end) = struct
       { k = fun c s -> B.plus (m1.k c s) (fun e -> (m2 e).k c s) }
 
     let split m = failwith "TODO: pass split operation through state monad transformer."
+
+    let once m =
+      { k = fun c s -> B.once (m.k c s) }
   end
 
   let run {k} s =

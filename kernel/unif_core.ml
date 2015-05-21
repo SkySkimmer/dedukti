@@ -6,6 +6,10 @@ module S = Msubst
 
 let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
 
+let mk_Appl t = function
+  | a::args -> mk_App t a args
+  | [] -> t
+
 type typing_error =
   | KindIsNotTypable
   | ConvertibilityError of term*context*term*term
@@ -95,6 +99,22 @@ TODO(future work): If possible we would like to use unification instead.
 *)
 let simpl t = get >>= fun pb -> return (apply pb t)
 
+let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
+  with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
+
+let rec expected_type sg ctx = function
+  | Kind -> raise (TypingError KindIsNotTypable)
+  | Type _ -> return mk_Kind
+  | DB (lc,x,n) -> var_get_type ctx lc x n
+  | Const (l,md,id) -> return (Signature.get_type sg l md id)
+  | App (f,_,_) -> expected_type sg ctx f
+  | Lam (lc,x,Some a,b) -> expected_type sg ((lc,x,a)::ctx) b >>= fun ty ->
+      return (mk_Pi lc x a ty)
+  | Lam (lc,_,None,_) -> raise (TypingError (DomainFreeLambda lc))
+  | Pi (lc,x,a,b) -> expected_type sg ((lc,x,a)::ctx) b
+  | Hole _ -> assert false
+  | Meta (lc,s,x,ts) as mv -> meta_constraint mv >>= fun (_,ty0) ->
+      return (subst_l (List.map snd ts) 0 ty0)
 
 (* returns None if there are no (unsolved) disagreement pairs *)
 let inspect = get >>= function
@@ -111,6 +131,10 @@ type side = LEFT | RIGHT
 let pair_modify_side side f = pair_modify (fun (ctx,lop,rop) -> match side with
   | LEFT -> f lop >>= fun lop -> return [ctx,lop,rop]
   | RIGHT -> f rop >>= fun rop -> return [ctx,lop,rop])
+
+let pair_symmetric side f = pair_modify (fun (ctx,lop,rop) -> match side with
+  | LEFT -> f ctx lop rop
+  | RIGHT -> f ctx rop lop)
 
 
 (* Tries to unfold the meta at the head of the left (resp right) term *)
@@ -178,7 +202,7 @@ let sanitize_index l n = let rec aux n c = function
 
 (* if t lives in context ctx, sanitize_term l t lives in ctx filtered by l *)
 let rec sanitize_term l = function
-  | Kind | Type _ | Const _ | Hole _ as t -> Some t
+  | Kind | Type _ | Const _ as t -> Some t
   | DB (lc,x,n) -> map_opt (fun n -> mk_DB lc x n) (sanitize_index l n)
   | App (f,a,args) -> Opt.(Opt.fold (fun args t -> map_opt (fun t -> t::args) (sanitize_term l t))
                                     [] (List.rev_append args [a;f]) >>= function
@@ -187,6 +211,7 @@ let rec sanitize_term l = function
   | Lam (lc,x,Some a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x (Some a) b)))
   | Lam (lc,x,None,b) -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x None b))
   | Pi (lc,x,a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Pi lc x a b)))
+  | Hole _ -> assert false
   | Meta (lc,s,n,ts) -> Opt.(Opt.fold (fun ts (x,t) -> map_opt (fun t -> (x,t)::ts) (sanitize_term l t))
                                  [] (List.rev ts) >>= fun ts ->
       Some (mk_Meta lc s n ts))
@@ -233,4 +258,172 @@ let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
           end
     | None -> raise (TypingError (UnknownMeta (lc,s,n))))
 
+(* returns l1,l2 such that l1++l2=l and |l1| = n *)
+let list_slice n l = let rec aux acc n l = if n=0
+  then (List.rev acc),l
+  else match l with
+    | x::l -> aux (x::acc) (n-1) l
+    | [] -> assert false
+  in aux [] n l
+
+let meta_fo side = pair_symmetric side (fun ctx active passive -> match active,passive with
+  | App (Meta _ as m,a,args), App (f,a',args') -> let alen = List.length args in let alen' = List.length args' in
+      if alen > alen' then zero Not_Applicable
+      else let (al1,al2) = list_slice (alen'-alen) (a'::args') in
+        return ((ctx,m,mk_Appl f al1)::(List.map2 (fun t1 t2 -> (ctx,t1,t2)) (a::args) al2))
+  | _ -> zero Not_Applicable)
+
+(** META-INST and helpers *)
+
+let find_unique p l = let rec aux i = function
+  | x::l -> if p x then if List.exists p l then None else Some i
+            else aux (i+1) l
+  | [] -> None
+  in aux 0 l
+
+let prune_subst_split ts = let rec aux filter subst = function
+  | (Some x)::l -> aux (true::filter) (x::subst) l
+  | None::l -> aux (false::filter) subst l
+  | [] -> (filter,subst)
+  in aux [] [] (List.rev ts)
+
+let parallel_filter filter l = let rec aux acc filter l = match filter,l with
+  | b::filter,x::l -> aux (if b then x::acc else acc) filter l
+  | [],[] -> List.rev acc
+  | _ -> assert false
+  in aux [] filter l
+
+(*
+y a metavariable, ts : (ident*term) option list
+Indices which are None in ts should be irrelevant for y
+*)
+let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
+  | None -> raise (TypingError (UnknownMeta (lc,s,y)))
+  | Some (mctx,mty) -> let filter,subst = prune_subst_split ts in
+      let filter,mctx' = sanitize_context filter mctx in
+      begin match mty with
+        | MTyped ty -> begin match sanitize_term filter ty with
+            | Some ty' -> return (MTyped ty')
+            | None -> zero Not_Applicable
+            end
+        | MType | MSort -> return mty
+        end >>= fun mty' ->
+      new_meta mctx' lc s mty' >>= fun mz ->
+      let mz = subst_l (context_project filter mctx) 0 mz in
+      set_meta y mz >>= fun () ->
+      begin match mz with (* not sure about this *)
+        | Meta (lc,s,z,_) -> return (mk_Meta lc s z (parallel_filter filter subst))
+        | _ -> assert false
+        end
+
+(*
+We try to invert the term, and fail with Not_Applicable if an unknown variable or the forbidden metavariable appear.
+If we fail for a term in a metavariable's substitution it should be pruned.
+*)
+let rec invert_term x vars q = function
+  | Kind | Type _ | Const _ as t -> return t
+  | DB (_,_,n) as t when (n<q) -> return t
+  | DB (lc,x,n) -> begin match find_unique (fun m -> (n-q)=m) vars with
+      | Some m -> return (mk_DB lc x (m+q))
+      | None -> zero Not_Applicable
+      end
+  | App (f,a,args) -> fold (fun l t -> invert_term x vars q t >>= fun t' -> return (t'::l)) [] (f::a::args) >>= fun l ->
+      begin match List.rev l with
+        | f::a::args -> return (mk_App f a args)
+        | _ -> assert false
+        end
+  | Lam (lc,y,Some a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y (Some a) b)
+  | Lam (lc,y,None  ,b) -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y None b)
+  | Pi (lc,y,a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Pi lc y a b)
+  | Hole _ -> assert false
+  | Meta (lc,s,y,ts) as mt -> get >>= fun pb -> begin match S.meta_val pb.sigma mt with
+    | Some mt' -> invert_term x vars q mt'
+    | None -> if x=y then zero Not_Applicable
+      else fold (fun (l,clean) (y,t) -> once (plus
+          (invert_term x vars q t >>= fun t -> return ((Some (y,t))::l,clean))
+          (function | Not_Applicable -> return (None::l,false) | e -> zero e)
+        )) ([],true) ts >>= fun (ts',clean) ->
+        if clean then return (mk_Meta lc s y (List.rev_map (function | Some x -> x | None -> assert false) ts'))
+        else prune lc s y ts'
+    end
+
+let rec invert_add_lambdas ctx x argn varl t = if argn = 0 then return t
+  else match varl with
+  | v::varl -> var_get_type ctx dloc empty v >>= fun ty ->
+    invert_term x varl 0 ty >>= fun ty ->
+    invert_add_lambdas ctx x (argn-1) varl (mk_Lam dloc empty (Some ty) t)
+  | [] -> assert false
+
+let invert ctx x ts_var args_var t =
+  let argn,varl = List.fold_left (fun (n,l) v -> (n+1,v::l)) (0,ts_var) args_var in
+  invert_term x varl 0 t >>= fun t' ->
+  invert_add_lambdas ctx x argn varl t'
+
+let rec meta_occurs x = function
+  | Kind | Type _ | DB _ | Const _ -> false
+  | App (f,a,args) -> List.exists (meta_occurs x) (f::a::args)
+  | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> meta_occurs x a || meta_occurs x b
+  | Lam (_,_,None,b) -> meta_occurs x b
+  | Hole _ -> assert false
+  | Meta (_,_,y,ts) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
+
+(* m is a meta whose type or kind must be the same as that of t *)
+let meta_ensure_type sg m t = match m with
+  | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
+      | Some (mctx,mty) -> begin match mty with
+          | MTyped ty -> expected_type sg mctx t >>= fun ty' ->
+              return [mctx,ty,ty']
+          | MType -> begin match t with
+              | Kind -> return []
+              | Meta (lc',s',x,_) -> begin match get_decl pb.decls x with
+                  | Some (_,MType) -> return []
+                  | Some (_,MSort) -> set_decl n (mctx,MSort) >>= fun () -> return []
+                  | Some (_,MTyped _) -> expected_type sg mctx t >>= fun ty' ->
+                      new_meta mctx lc s MSort >>= fun ty ->
+                      set_decl n (mctx,MTyped ty) >>= fun () ->
+                      return [mctx,ty,ty']
+                  | None -> raise (TypingError (UnknownMeta (lc',s',x)))
+                  end
+              | _ -> expected_type sg mctx t >>= fun ty' ->
+                  new_meta mctx lc s MSort >>= fun ty ->
+                  set_decl n (mctx,MTyped ty) >>= fun () ->
+                  return [mctx,ty,ty']
+              end
+          | MSort -> begin match t with
+              | Kind -> return []
+              | Meta (lc',s',x,_) -> begin match get_decl pb.decls x with
+                  | Some (mctx',MType) -> set_decl x (mctx',MSort) >>= fun () -> return []
+                  | Some (_,MSort) -> return []
+                  | Some (mctx',MTyped _) -> expected_type sg mctx t >>= fun ty' ->
+                      set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
+                      return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
+                  | None -> raise (TypingError (UnknownMeta (lc',s',x)))
+                  end
+              | _ -> expected_type sg mctx t >>= fun ty' ->
+                  set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
+                  return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
+              end
+          end
+      | None -> raise (TypingError (UnknownMeta (lc,s,n)))
+      end
+  | _ -> assert false
+
+let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin match active with
+  | Meta _ -> return (active,[])
+  | App (Meta _ as m,a,args) -> return (m,a::args)
+  | _ -> zero Not_Applicable
+  end >>= fun (m,args) -> match m with
+  | Meta (lc,s,n,ts) -> begin match Opt.fold (fun vl -> function | (_,DB (_,_,n)) -> Some (n::vl) | _ -> None) [] ts with
+    | Some ts_var -> begin match Opt.fold (fun vl -> function | DB (_,_,n) -> Some (n::vl) | _ -> None) [] args with
+      | Some args_var -> return (n,ts_var,args_var)
+      | None -> zero Not_Applicable
+      end
+    | None -> zero Not_Applicable
+    end >>= fun (n,ts_var,args_var) ->
+    let passive = Reduction.whnf sg passive in
+    invert ctx n ts_var args_var passive >>= fun inst ->
+    if meta_occurs n inst then zero Not_Applicable
+    else meta_ensure_type sg m inst
+  | _ -> assert false
+  )
 

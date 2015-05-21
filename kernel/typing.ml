@@ -186,7 +186,7 @@ module RMeta : sig
   
   type problem
   
-  val extract : 'a t -> 'a*problem
+  val extract : Signature.t -> 'a t -> 'a*problem
   
   val apply : problem -> term -> term
 end = struct
@@ -195,7 +195,7 @@ end = struct
 
   let fail = zero
 
-  let extract m = run (m >>= fun x -> solve >>= fun () -> return x)
+  let extract sg m = run (m >>= fun x -> solve sg >>= fun () -> return x)
 
   let unify_annot sg ctx t = if !coc then unify_sort sg ctx t else unify sg ctx t (mk_Type dloc)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
@@ -371,17 +371,17 @@ module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
 (* **** REFINE AND CHECK ******************************** *)
 
 let inference sg (te:term) : judgment =
-  let jdg0,pb = RMeta.extract (MetaRefine.infer sg Context.empty te) in
+  let jdg0,pb = RMeta.extract sg (MetaRefine.infer sg Context.empty te) in
     KRefine.infer sg Context.empty (RMeta.apply pb jdg0.te)
 
 let checking sg (te:term) (ty_exp:term) : judgment =
-  let jdg_te,pb = RMeta.extract (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty)) in
+  let jdg_te,pb = RMeta.extract sg (RMeta.(>>=) (MetaRefine.infer sg Context.empty ty_exp) (fun jdg_ty -> MetaRefine.check sg te jdg_ty)) in
   let ty_r = RMeta.apply pb jdg_te.ty in let te_r = RMeta.apply pb jdg_te.te in
   let jty = KRefine.infer sg Context.empty ty_r in
     KRefine.check sg te_r jty
 
 let check_rule sg (ctx,le,ri:rule) : unit =
-  let ((ctx,ri),pb) = RMeta.extract (RMeta.(>>=)
+  let ((ctx,ri),pb) = RMeta.extract sg (RMeta.(>>=)
     (RMeta.fold (fun ctx (l,id,ty) -> RMeta.(>>=) (MetaRefine.infer sg ctx ty) (RMeta.add sg l id)) Context.empty (List.rev ctx))
     (fun ctx -> RMeta.(>>=) (MetaRefine.infer_pattern sg ctx 0 SS.identity le)
     (fun (ty_inf,sigma) ->

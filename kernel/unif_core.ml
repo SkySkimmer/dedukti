@@ -177,7 +177,7 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
   | Lam (_,_,None,b), Lam (_,y,Some a',b') -> return [((dloc,y,a')::ctx,b,b')]
   | Lam _, Lam _ -> zero DecomposeDomainFreeLambdas
   | Pi (_,x,a,b), Pi (_,_,a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
-  | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> effectful (fun () -> failwith "TODO: decompose meta pair")
+  | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> return (List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts')
   | _, _ -> zero Not_Unifiable
   in pair_modify pair_decompose
 

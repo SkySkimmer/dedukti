@@ -99,6 +99,24 @@ TODO(future work): If possible we would like to use unification instead.
 *)
 let simpl t = get >>= fun pb -> return (apply pb t)
 
+let pp_mkind out = function
+  | MTyped ty -> Printf.fprintf out ": %a" pp_term ty
+  | MType -> Printf.fprintf out ": *"
+  | MSort -> Printf.fprintf out "= *"
+
+let pp_mdecl out n (ctx,mk) = Printf.fprintf out "%a |- %i %a\n" pp_context ctx n pp_mkind mk
+
+let pp_decls out m = IntMap.iter (fun i d -> pp_mdecl out i d) m
+
+let pp_pair out (ctx,t1,t2) = Printf.fprintf out "%a |- %a == %a\n" pp_context ctx pp_term t1 pp_term t2
+
+let pp_problem out pb = Printf.fprintf out "{ cpt=%i;\n%a\n%a\n%a\n }" pb.cpt pp_decls pb.decls S.pp pb.sigma  (pp_list "" pp_pair) pb.pairs
+
+let pp_state = get >>= fun pb -> effectful (fun () ->
+  Printf.printf "%a\n" pp_problem pb
+  )
+
+
 let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
   with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
 
@@ -281,14 +299,10 @@ let find_unique p l = let rec aux i = function
   | [] -> None
   in aux 0 l
 
-let prune_subst_split ts = let rec aux filter subst = function
-  | (Some x)::l -> aux (true::filter) (x::subst) l
-  | None::l -> aux (false::filter) subst l
-  | [] -> (filter,subst)
-  in aux [] [] (List.rev ts)
 
-let parallel_filter filter l = let rec aux acc filter l = match filter,l with
-  | b::filter,x::l -> aux (if b then x::acc else acc) filter l
+let opt_filter filter l = let rec aux acc filter l = match filter,l with
+  | true::filter,(Some x)::l -> aux (x::acc) filter l
+  | false::filter,_::l -> aux acc filter l
   | [],[] -> List.rev acc
   | _ -> assert false
   in aux [] filter l
@@ -299,7 +313,7 @@ Indices which are None in ts should be irrelevant for y
 *)
 let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
   | None -> raise (TypingError (UnknownMeta (lc,s,y)))
-  | Some (mctx,mty) -> let filter,subst = prune_subst_split ts in
+  | Some (mctx,mty) -> let filter = List.map (function | Some _ -> true | None -> false) ts in
       let filter,mctx' = sanitize_context filter mctx in
       begin match mty with
         | MTyped ty -> begin match sanitize_term filter ty with
@@ -312,7 +326,7 @@ let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
       let mz = subst_l (context_project filter mctx) 0 mz in
       set_meta y mz >>= fun () ->
       begin match mz with (* not sure about this *)
-        | Meta (lc,s,z,_) -> return (mk_Meta lc s z (parallel_filter filter subst))
+        | Meta (lc,s,z,_) -> return (mk_Meta lc s z (opt_filter filter ts))
         | _ -> assert false
         end
 

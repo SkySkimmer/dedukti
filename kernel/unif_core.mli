@@ -51,6 +51,8 @@ TODO(future work): If possible we would like to use unification instead.
 val simpl : term -> term t
 
 
+val pp_state : unit t
+
 (* returns Nothing if there are no (unsolved) disagreement pairs *)
 val inspect : pair option t
 

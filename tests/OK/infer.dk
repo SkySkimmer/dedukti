@@ -11,10 +11,5 @@ c3 : Q c1 c2.
 
 T := x : Nat -> y : P x -> z : Q x y -> Nat.
 
-#CHECK (f => f c1 c2 c3), (f:T -> Nat).
-
-#CHECK (f => f c1 c2 c3), (f:?{"T"} -> Nat).
-
 #INFER (f:? => P (f c1 c2 c3)).
 
-#INFER (f:? => f (f c1)).

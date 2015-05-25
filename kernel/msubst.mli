@@ -6,6 +6,8 @@ type t
 
 val identity : t
 
+val mem : t -> int -> bool
+
 val add : t -> int -> term -> t
 
 val apply : t -> term -> term
@@ -18,6 +20,8 @@ val meta_val : t -> term -> term option
 
 val whnf : Signature.t -> t -> term -> term
 (** Recursively apply Reduction.whnf and meta_val on the term's head. *)
+
+val normalize : t -> t
 
 val pp : out_channel -> t -> unit
 

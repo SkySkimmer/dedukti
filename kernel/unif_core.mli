@@ -37,6 +37,8 @@ type pair = context*term*term
 
 val add_pair : Signature.t -> pair -> unit t
 
+val add_sort_pair : Signature.t -> context -> term -> unit t
+
 val new_meta : context -> loc -> ident -> mkind -> term t
 
 val meta_constraint : term -> (context*term) t
@@ -50,6 +52,8 @@ TODO(future work): If possible we would like to use unification instead.
 *)
 val simpl : term -> term t
 
+val normalize : unit t
+
 
 val pp_state : unit t
 
@@ -57,6 +61,8 @@ val pp_state : unit t
 val inspect : pair option t
 
 type side = LEFT | RIGHT
+
+val pp_side : out_channel -> side -> unit
 
 (*
 Decompose the pair according to the common constructor of the terms:

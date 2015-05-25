@@ -10,6 +10,10 @@ let mk_Appl t = function
   | a::args -> mk_App t a args
   | [] -> t
 
+let mkind_map f = function
+  | MTyped ty -> MTyped (f ty)
+  | MType | MSort as m -> m
+
 type typing_error =
   | KindIsNotTypable
   | ConvertibilityError of term*context*term*term
@@ -63,21 +67,52 @@ let raise e = effectful (fun () -> raise e)
 
 (* monad basic operations end here *)
 
+let pp_mkind out = function
+  | MTyped ty -> Printf.fprintf out ": %a" pp_term ty
+  | MType -> Printf.fprintf out ": *"
+  | MSort -> Printf.fprintf out "= *"
+
+let pp_mdecl out n (ctx,mk) = Printf.fprintf out "%a |- %i %a\n" pp_context ctx n pp_mkind mk
+
+let pp_decls out m = IntMap.iter (fun i d -> pp_mdecl out i d) m
+
+let pp_pair out (ctx,t1,t2) = Printf.fprintf out "%a |- %a == %a\n" pp_context ctx pp_term t1 pp_term t2
+
+let pp_problem out pb = Printf.fprintf out "{ cpt=%i;\n%a\n%a\n%a\n }\n" pb.cpt pp_decls pb.decls S.pp pb.sigma  (pp_list "" pp_pair) pb.pairs
+
+let pp_state = get >>= fun pb -> effectful (fun () ->
+  Printf.printf "%a\n" pp_problem pb
+  )
+
 let apply pb t = S.apply pb.sigma t
 
-let add_pair sg p = modify (fun pb -> {pb with pairs=p::pb.pairs})
+let add_pair sg p = effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->
+  modify (fun pb -> {pb with pairs=p::pb.pairs})
 
-let new_meta ctx lc s k = get >>= fun pb ->
-  let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
-  let mj = mk_Meta lc s pb.cpt substj in
-  set { pb with cpt=pb.cpt+1; decls=IntMap.add pb.cpt (ctx,k) pb.decls } >>= fun () ->
-  return mj
+let new_meta ctx lc s k = get >>= fun pb -> match k with
+  | MSort -> let mj = mk_Meta lc s pb.cpt [] in
+      set { pb with cpt=pb.cpt+1; decls=IntMap.add pb.cpt ([],MSort) pb.decls } >>= fun () ->
+      return mj
+  | _ -> let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
+      let mj = mk_Meta lc s pb.cpt substj in
+      set { pb with cpt=pb.cpt+1; decls=IntMap.add pb.cpt (ctx,k) pb.decls } >>= fun () ->
+      return mj
 
 let get_decl decls n = try Some (IntMap.find n decls) with | Not_found -> None
 
+let add_sort_pair sg ctx = function
+  | Meta (lc,s,x,ts) as t -> get >>= fun pb -> begin match get_decl pb.decls x with
+      | Some (_,MSort) -> return ()
+      | Some _ -> new_meta ctx lc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
+      | None -> raise (TypingError (UnknownMeta (lc,s,x)))
+      end
+  | t -> new_meta ctx dloc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
+
 let set_decl n d = modify (fun pb -> { pb with decls=IntMap.add n d pb.decls })
 
-let set_meta n t = modify (fun pb -> { pb with sigma=S.add pb.sigma n t })
+let set_meta n t = get >>= fun pb ->
+  if S.mem pb.sigma n then zero Not_Applicable
+  else set { pb with sigma=S.add pb.sigma n t }
 
 let meta_constraint = function
   | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
@@ -99,33 +134,27 @@ TODO(future work): If possible we would like to use unification instead.
 *)
 let simpl t = get >>= fun pb -> return (apply pb t)
 
-let pp_mkind out = function
-  | MTyped ty -> Printf.fprintf out ": %a" pp_term ty
-  | MType -> Printf.fprintf out ": *"
-  | MSort -> Printf.fprintf out "= *"
-
-let pp_mdecl out n (ctx,mk) = Printf.fprintf out "%a |- %i %a\n" pp_context ctx n pp_mkind mk
-
-let pp_decls out m = IntMap.iter (fun i d -> pp_mdecl out i d) m
-
-let pp_pair out (ctx,t1,t2) = Printf.fprintf out "%a |- %a == %a\n" pp_context ctx pp_term t1 pp_term t2
-
-let pp_problem out pb = Printf.fprintf out "{ cpt=%i;\n%a\n%a\n%a\n }" pb.cpt pp_decls pb.decls S.pp pb.sigma  (pp_list "" pp_pair) pb.pairs
-
-let pp_state = get >>= fun pb -> effectful (fun () ->
-  Printf.printf "%a\n" pp_problem pb
-  )
-
+let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
+  let d = IntMap.map (fun (ctx,ty) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, mkind_map (S.apply s) ty)) pb.decls in
+  let p = List.map (fun (ctx,t1,t2) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2)) pb.pairs in
+  {cpt=pb.cpt; decls=d; sigma=s; pairs=p; })
 
 let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
   with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
+
+let rec pi_app sg ty = function
+  | a::args -> whnf sg ty >>= begin function
+      | Pi (_,_,_,b) -> pi_app sg (Subst.subst b a) args
+      | _ -> zero Not_Applicable (* Not necessarily the right error but w/e *)
+      end
+  | [] -> return ty
 
 let rec expected_type sg ctx = function
   | Kind -> raise (TypingError KindIsNotTypable)
   | Type _ -> return mk_Kind
   | DB (lc,x,n) -> var_get_type ctx lc x n
   | Const (l,md,id) -> return (Signature.get_type sg l md id)
-  | App (f,_,_) -> expected_type sg ctx f
+  | App (f,a,args) -> expected_type sg ctx f >>= fun ty -> pi_app sg ty (a::args)
   | Lam (lc,x,Some a,b) -> expected_type sg ((lc,x,a)::ctx) b >>= fun ty ->
       return (mk_Pi lc x a ty)
   | Lam (lc,_,None,_) -> raise (TypingError (DomainFreeLambda lc))
@@ -146,6 +175,10 @@ let pair_modify f = get >>= fun pb -> match pb.pairs with
 
 type side = LEFT | RIGHT
 
+let pp_side out = function
+  | LEFT -> Printf.fprintf out "LEFT"
+  | RIGHT -> Printf.fprintf out "RIGHT"
+
 let pair_modify_side side f = pair_modify (fun (ctx,lop,rop) -> match side with
   | LEFT -> f lop >>= fun lop -> return [ctx,lop,rop]
   | RIGHT -> f rop >>= fun rop -> return [ctx,lop,rop])
@@ -156,7 +189,7 @@ let pair_symmetric side f = pair_modify (fun (ctx,lop,rop) -> match side with
 
 
 (* Tries to unfold the meta at the head of the left (resp right) term *)
-let meta_delta side = let delta t = get >>= fun pb -> begin match t with
+let meta_delta side = pair_modify_side side (fun t -> get >>= fun pb -> match t with
   | Meta _ as m -> begin match S.meta_val pb.sigma m with
       | Some m' -> return m'
       | None -> zero Not_Applicable
@@ -166,12 +199,12 @@ let meta_delta side = let delta t = get >>= fun pb -> begin match t with
       | None -> zero Not_Applicable
       end
   | _ -> zero Not_Applicable
-  end in pair_modify_side side delta
+  )
 
-let step_reduce sg side = let step t = match Reduction.one_step sg t with
+let step_reduce sg side = pair_modify_side side (fun t -> match Reduction.one_step sg t with
   | Some t' -> return t'
   | None -> zero Not_Applicable
-  in pair_modify_side side step
+  )
 
 (*
 Decompose the pair according to the common constructor of the terms:
@@ -219,24 +252,27 @@ let sanitize_index l n = let rec aux n c = function
   in aux n 0 l
 
 (* if t lives in context ctx, sanitize_term l t lives in ctx filtered by l *)
-let rec sanitize_term l = function
+let rec sanitize_term sigma l = function
   | Kind | Type _ | Const _ as t -> Some t
   | DB (lc,x,n) -> map_opt (fun n -> mk_DB lc x n) (sanitize_index l n)
-  | App (f,a,args) -> Opt.(Opt.fold (fun args t -> map_opt (fun t -> t::args) (sanitize_term l t))
+  | App (f,a,args) -> Opt.(Opt.fold (fun args t -> map_opt (fun t -> t::args) (sanitize_term sigma l t))
                                     [] (List.rev_append args [a;f]) >>= function
       | f::a::args -> Some (mk_App f a args)
       | _ -> assert false)
-  | Lam (lc,x,Some a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x (Some a) b)))
-  | Lam (lc,x,None,b) -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Lam lc x None b))
-  | Pi (lc,x,a,b) -> Opt.(sanitize_term l a >>= fun a -> Opt.(sanitize_term (true::l) b >>= fun b -> Some (mk_Pi lc x a b)))
+  | Lam (lc,x,Some a,b) -> Opt.(sanitize_term sigma l a >>= fun a -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Lam lc x (Some a) b)))
+  | Lam (lc,x,None,b) -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Lam lc x None b))
+  | Pi (lc,x,a,b) -> Opt.(sanitize_term sigma l a >>= fun a -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Pi lc x a b)))
   | Hole _ -> assert false
-  | Meta (lc,s,n,ts) -> Opt.(Opt.fold (fun ts (x,t) -> map_opt (fun t -> (x,t)::ts) (sanitize_term l t))
-                                 [] (List.rev ts) >>= fun ts ->
-      Some (mk_Meta lc s n ts))
+  | Meta (lc,s,n,ts) as m -> begin match S.meta_val sigma m with
+      | Some m' -> sanitize_term sigma l m'
+      | None -> Opt.(Opt.fold (fun ts (x,t) -> map_opt (fun t -> (x,t)::ts) (sanitize_term sigma l t))
+                              [] (List.rev ts) >>= fun ts ->
+          Some (mk_Meta lc s n ts))
+      end
 
-let rec sanitize_context l ctx = match l,ctx with
-  | b::l, (lc,x,ty)::ctx -> let (l,ctx) = sanitize_context l ctx in
-      if b then begin match sanitize_term l ty with
+let rec sanitize_context s l ctx = match l,ctx with
+  | b::l, (lc,x,ty)::ctx -> let (l,ctx) = sanitize_context s l ctx in
+      if b then begin match sanitize_term s l ty with
         | Some ty -> true::l,(lc,x,ty)::ctx
         | None -> false::l,ctx
         end
@@ -260,9 +296,9 @@ let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
   end >>= fun (lc,s,n,ts,ts',args,args') -> 
   get >>= fun pb -> match get_decl pb.decls n with
     | Some (mctx0,m) -> let inter = subst_intersection ts ts' in
-        let (inter,mctx) = sanitize_context inter mctx0 in
+        let (inter,mctx) = sanitize_context pb.sigma inter mctx0 in
         let m = match m with
-          | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term inter ty)
+          | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term pb.sigma inter ty)
           | MType | MSort -> Some m in
         begin match m with
           | Some m -> new_meta mctx lc s m >>= fun mj ->
@@ -314,9 +350,9 @@ Indices which are None in ts should be irrelevant for y
 let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
   | None -> raise (TypingError (UnknownMeta (lc,s,y)))
   | Some (mctx,mty) -> let filter = List.map (function | Some _ -> true | None -> false) ts in
-      let filter,mctx' = sanitize_context filter mctx in
+      let filter,mctx' = sanitize_context pb.sigma filter mctx in
       begin match mty with
-        | MTyped ty -> begin match sanitize_term filter ty with
+        | MTyped ty -> begin match sanitize_term pb.sigma filter ty with
             | Some ty' -> return (MTyped ty')
             | None -> zero Not_Applicable
             end
@@ -329,6 +365,7 @@ let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
         | Meta (lc,s,z,_) -> return (mk_Meta lc s z (opt_filter filter ts))
         | _ -> assert false
         end
+
 
 (*
 We try to invert the term, and fail with Not_Applicable if an unknown variable or the forbidden metavariable appear.
@@ -358,7 +395,7 @@ let rec invert_term x vars q = function
           (function | Not_Applicable -> return (None::l,false) | e -> zero e)
         )) ([],true) ts >>= fun (ts',clean) ->
         if clean then return (mk_Meta lc s y (List.rev_map (function | Some x -> x | None -> assert false) ts'))
-        else prune lc s y ts'
+        else prune lc s y (List.rev ts')
     end
 
 let rec invert_add_lambdas ctx x argn varl t = if argn = 0 then return t
@@ -382,7 +419,7 @@ let rec meta_occurs x = function
   | Meta (_,_,y,ts) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
 
 (* m is a meta whose type or kind must be the same as that of t *)
-let meta_ensure_type sg m t = match m with
+let meta_set_ensure_type sg m t = effectful (fun () -> Printf.printf "meta_set_ensure_type %a := %a.\n" pp_term m pp_term t) >>= fun () -> match m with
   | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
       | Some (mctx,mty) -> begin match mty with
           | MTyped ty -> expected_type sg mctx t >>= fun ty' ->
@@ -417,7 +454,7 @@ let meta_ensure_type sg m t = match m with
                   set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
                   return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
               end
-          end
+          end >>= fun l -> set_meta n t >>= fun () -> return l
       | None -> raise (TypingError (UnknownMeta (lc,s,n)))
       end
   | _ -> assert false
@@ -437,7 +474,7 @@ let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin mat
     let passive = Reduction.whnf sg passive in
     invert ctx n ts_var args_var passive >>= fun inst ->
     if meta_occurs n inst then zero Not_Applicable
-    else meta_ensure_type sg m inst
+    else meta_set_ensure_type sg m inst
   | _ -> assert false
   )
 

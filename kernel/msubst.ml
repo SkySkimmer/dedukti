@@ -41,12 +41,16 @@ let rec whnf sg sigma t = match Reduction.whnf sg t with
       end
   | t0 -> t0
 
+let mem sigma n = IntMap.mem n sigma
+
 let add (sigma:t) (n:int) (t:term) : t =
   assert ( not ( IntMap.mem n sigma ) );
   IntMap.add n t sigma
 
+let normalize sigma = IntMap.map (apply sigma) sigma
+
 let pp out sigma =
   IntMap.iter
-    (fun i t -> Printf.fprintf out "( ?_%i |-> %a )" i pp_term t)
+    (fun i t -> Printf.fprintf out "( ?_%i |-> %a )\n" i pp_term t)
     sigma
 

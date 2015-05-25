@@ -13,7 +13,6 @@ type typing_error =
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
   | UnknownMeta of loc*ident*int
-  | ConvRule_Bad of term*term
   | DecomposeDomainFreeLambdas
   | CannotSolveDeferred
   | Not_Unifiable

@@ -86,7 +86,7 @@ let pp_state = get >>= fun pb -> effectful (fun () ->
 
 let apply pb t = S.apply pb.sigma t
 
-let add_pair sg p = effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->
+let add_pair sg p = (*effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->*)
   modify (fun pb -> {pb with pairs=p::pb.pairs})
 
 let new_meta ctx lc s k = get >>= fun pb -> match k with
@@ -419,7 +419,7 @@ let rec meta_occurs x = function
   | Meta (_,_,y,ts) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
 
 (* m is a meta whose type or kind must be the same as that of t *)
-let meta_set_ensure_type sg m t = effectful (fun () -> Printf.printf "meta_set_ensure_type %a := %a.\n" pp_term m pp_term t) >>= fun () -> match m with
+let meta_set_ensure_type sg m t = match m with
   | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
       | Some (mctx,mty) -> begin match mty with
           | MTyped ty -> expected_type sg mctx t >>= fun ty' ->

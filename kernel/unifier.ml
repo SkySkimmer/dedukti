@@ -19,7 +19,7 @@ let rec solve_pair sg p = fully_backtracking
   ; decompose
   ; step_reduce sg RIGHT; step_reduce sg LEFT]
 
-let rec solve sg = normalize >>= fun () -> effectful (fun () -> Printf.printf "Solve step for ") >>= fun () -> pp_state >>= fun () ->
+let rec solve sg = normalize >>= fun () -> (*effectful (fun () -> Printf.printf "Solve step for ") >>= fun () -> pp_state >>= fun () ->*)
   inspect >>= function
   | Some p -> solve_pair sg p >>= fun () -> solve sg
   | None -> return ()

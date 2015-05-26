@@ -207,7 +207,7 @@ end = struct
 
   let pi sg ctx t = whnf sg t >>= function
     | Pi (l,x,a,b) -> return (Some (l,x,a,b))
-    | _ -> let empty = Basics.empty in
+    | _ -> plus (let empty = Basics.empty in
         let ctx0 = Context.to_context ctx in
         new_meta_annot ctx0 dloc empty >>= fun ms ->
         new_meta ctx0 dloc empty (MTyped ms) >>= fun mt ->
@@ -217,8 +217,9 @@ end = struct
         let pi = mk_Pi dloc empty mt mk in
         unify sg ctx0 t pi >>= begin function
         | true -> return (Some (dloc,empty,mt,mk))
-        | false -> return None (* Note that here we have some useless metas polluting the unification. Can we eliminate them? *)
-        end
+        | false -> zero Not_Unifiable
+        end) (* This backtracking lets us forget newly introduced metavariables. *)
+        (function | Not_Applicable | Not_Unifiable -> return None | e -> zero e)
 end
 
 (* ********************** TYPE CHECKING/INFERENCE  *)

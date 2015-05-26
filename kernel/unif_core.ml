@@ -228,6 +228,8 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
   | Lam _, Lam _ -> zero DecomposeDomainFreeLambdas
   | Pi (_,x,a,b), Pi (_,_,a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
   | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> return (List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts')
+  | App _, _ | _, App _ | Meta _, _ | _, Meta _ -> zero Not_Applicable
+  | Const _, _ | _, Const _ -> zero Not_Applicable
   | _, _ -> zero Not_Unifiable
   in pair_modify pair_decompose
 

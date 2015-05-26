@@ -13,6 +13,8 @@ module type Monad = sig
   val return : 'a -> 'a t
   
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+
+  val (>>) : unit t -> 'a t -> 'a t
 end
 
 module type MonadS = sig

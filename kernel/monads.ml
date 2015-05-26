@@ -6,11 +6,13 @@ module type Monad = sig
   val return : 'a -> 'a t
   
   val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+
+  val (>>) : unit t -> 'a t -> 'a t
 end
 
 module type MonadS = sig
   type 'a t
-  
+
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 end
 
@@ -24,10 +26,12 @@ end
 
 module ID = struct
   type 'a t = 'a
-  
+
   let return x = x
-  
+
   let (>>=) m f = f m
+
+  let (>>) x y = y
 end
 
 module type EffectS = sig
@@ -42,7 +46,9 @@ module IO = struct
   let return x = fun () -> x
   
   let (>>=) m f = fun () -> f (m()) ()
-  
+
+  let (>>) x y = fun () -> x(); y()
+
   let effectful f = fun () -> f ()
   
   let run f () = f ()
@@ -53,6 +59,7 @@ module Opt = struct
     type 'a t = 'a option
     let return x = Some x
     let (>>=) m f = bind_opt f m
+    let (>>) x y = bind_opt (fun () -> y) x
     end
   include M
   include MonadF(M)
@@ -101,6 +108,9 @@ module BacktrackF (M:Monad) (E:sig type err end) = struct
 
   let (>>=) m f =
     { k = fun sk fk -> m.k (fun a fk -> (f a).k sk fk) fk }
+
+  let (>>) x y =
+    { k = fun sk fk -> x.k (fun () fk -> y.k sk fk) fk }
 
   type 'a m = 'a M.t
   let lift x =
@@ -156,6 +166,9 @@ module StateF (M:Monad) (S:sig type state end) = struct
   
   let (>>=) (m:'a t) (f:'a -> 'b t) : 'b t =
     { k = fun c s -> m.k (fun a s' -> (f a).k c s') s }
+
+  let (>>) x y =
+    { k = fun c s -> x.k (fun () s' -> y.k c s') s }
 
   type 'a m = 'a M.t
   let lift m =

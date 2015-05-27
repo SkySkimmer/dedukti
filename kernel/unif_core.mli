@@ -28,6 +28,11 @@ include BacktrackS with type 'a t := 'a t and type err = typing_error
 
 type problem
 
+val pp_problem : out_channel -> problem -> unit
+
+(** Wrapper around pp_problem *)
+val pp_state : unit t
+
 (* raises an exception if there are no successes *)
 val run : 'a t -> 'a*problem
 val apply : problem -> term -> term
@@ -47,7 +52,7 @@ val meta_decl : loc -> ident -> int -> (context*mkind) t
 val whnf : Signature.t -> term -> term t
 
 (*
-This is only used in the pseudo-unification step of pattern checking.
+This is only used before the pseudo-unification step of pattern checking.
 TODO(future work): If possible we would like to use unification instead.
 *)
 val simpl : term -> term t
@@ -55,14 +60,17 @@ val simpl : term -> term t
 val normalize : unit t
 
 
-val pp_state : unit t
-
 (* returns Nothing if there are no (unsolved) disagreement pairs *)
 val inspect : pair option t
 
 type side = LEFT | RIGHT
 
 val pp_side : out_channel -> side -> unit
+
+(*
+The terms of the pair are convertible modulo reduction and meta expansion
+*)
+val pair_convertible : Signature.t -> unit t
 
 (*
 Decompose the pair according to the common constructor of the terms:

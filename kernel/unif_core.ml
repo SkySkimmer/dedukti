@@ -184,6 +184,44 @@ let pair_symmetric side f = pair_modify (fun (ctx,lop,rop) -> match side with
   | RIGHT -> f ctx rop lop)
 
 
+(*
+pair-convertible and helpers
+*)
+
+let rec add_to_list2 l1 l2 lst =
+  match l1, l2 with
+    | [], [] -> Some lst
+    | s1::l1, s2::l2 -> add_to_list2 l1 l2 ((s1,s2)::lst)
+    | _,_ -> None
+
+let rec are_convertible_lst sg : (term*term) list -> bool t = function
+  | [] -> return true
+  | (t1,t2)::lst ->
+    begin
+      ( if term_eq t1 t2 then return (Some lst)
+        else
+          whnf sg t1 >>= fun t1 -> whnf sg t2 >>= fun t2 -> match t1,t2 with
+          | Kind, Kind | Type _, Type _ | Hole _, Hole _ -> return (Some lst)
+          | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> return (Some lst)
+          | DB (_,_,n), DB (_,_,n') when ( n==n' ) -> return (Some lst)
+          | App (f,a,args), App (f',a',args') ->
+            return (add_to_list2 args args' ((f,f')::(a,a')::lst))
+          | Lam (_,_,_,b), Lam (_,_,_,b') -> return (Some ((b,b')::lst))
+          | Pi (_,_,a,b), Pi (_,_,a',b') -> return (Some ((a,a')::(b,b')::lst))
+          | Meta (_,_,n,ts), Meta (_,_,n',ts') when ( n==n' ) -> return (add_to_list2 (List.map snd ts) (List.map snd ts') lst)
+          | t1, t2 -> return None
+      ) >>= function
+      | None -> return false
+      | Some lst2 -> are_convertible_lst sg lst2
+    end
+
+let are_convertible sg t1 t2 = are_convertible_lst sg [(t1,t2)]
+
+let pair_convertible sg = pair_modify (fun (ctx,lop,rop) ->
+  are_convertible sg lop rop >>= function
+  | true -> return []
+  | false -> zero Not_Applicable)
+
 (* Tries to unfold the meta at the head of the left (resp right) term *)
 let meta_delta side = pair_modify_side side (fun t -> get >>= fun pb -> match t with
   | Meta _ as m -> begin match S.meta_val pb.sigma m with

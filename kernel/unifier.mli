@@ -6,5 +6,3 @@ val unify : Signature.t -> context -> term -> term -> bool t
 
 val unify_sort : Signature.t -> context -> term -> bool t
 
-val solve : Signature.t -> unit t
-

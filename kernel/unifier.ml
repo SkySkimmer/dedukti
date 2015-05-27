@@ -27,10 +27,10 @@ let rec solve sg = normalize >>= fun () -> (*effectful (fun () -> Printf.printf 
 let unify sg ctx t1 t2 = if Reduction.are_convertible sg t1 t2
   then return true
   else add_pair sg (ctx,t1,t2) >>= fun () -> plus (once (solve sg) >>= fun () -> return true)
-                                                  (function | Not_Unifiable -> return false | e -> zero e)
+                                                  (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
 
 let unify_sort sg ctx = function
   | Kind | Type _ -> return true
   | t -> add_sort_pair sg ctx t >>= fun () -> plus (once (solve sg) >>= fun () -> return true)
-                                                (function | Not_Unifiable -> return false | e -> zero e)
+                                                (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
 

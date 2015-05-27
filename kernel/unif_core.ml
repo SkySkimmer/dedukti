@@ -349,20 +349,6 @@ let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
     | Some l -> return l
     | None -> zero Not_Applicable)
 
-(* returns l1,l2 such that l1++l2=l and |l1| = n *)
-let list_slice n l = let rec aux acc n l = if n=0
-  then (List.rev acc),l
-  else match l with
-    | x::l -> aux (x::acc) (n-1) l
-    | [] -> assert false
-  in aux [] n l
-
-let meta_fo side = pair_symmetric side (fun ctx active passive -> match active,passive with
-  | App (Meta _ as m,a,args), App (f,a',args') -> let alen = List.length args in let alen' = List.length args' in
-      if alen > alen' then zero Not_Applicable
-      else let (al1,al2) = list_slice (alen'-alen) (a'::args') in
-        return ((ctx,m,mk_Appl f al1)::(List.map2 (fun t1 t2 -> (ctx,t1,t2)) (a::args) al2))
-  | _ -> zero Not_Applicable)
 
 (** META-INST and helpers *)
 
@@ -515,16 +501,16 @@ split_app and helpers
 *)
 
 (*
-[split_at n l] returns Some(l1,l2) such that |l1|=n and l=(List.rev l1)++l2 if possible
+[split_at n l] returns Some(l1,l2) such that |l1|=n and l=l1++l2 if possible
 (TODO: remove duplication with list_slice)
 *)
-let split_at n l = let rec aux n acc = fun l -> if n=0 then Some (acc,l) else match l with
+let list_slice n l = let rec aux n acc = fun l -> if n=0 then Some (List.rev acc,l) else match l with
   | x::l -> aux (n-1) (x::acc) l
   | [] -> None
   in aux n [] l
 
 let split_app n = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
-  | App (f,a,args), App (f',a',args') -> begin match split_at n (List.rev (a::args)), split_at n (List.rev (a'::args')) with
+  | App (f,a,args), App (f',a',args') -> begin match list_slice n (List.rev (a::args)), list_slice n (List.rev (a'::args')) with
       | Some (a1,a2), Some (a1',a2') ->
           return ((ctx,mk_Appl f (List.rev a2),mk_Appl f' (List.rev a2'))::(List.map2 (fun t1 t2 -> (ctx,t1,t2)) a1 a1'))
       | _,_ -> zero Not_Applicable

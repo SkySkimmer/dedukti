@@ -2,6 +2,17 @@ open Basics
 open Term
 open Unif_core
 
+(** Rules *)
+
+let meta_fo side (_,lop,rop) =
+  let op = match side with | LEFT -> lop | RIGHT -> rop in
+  match op with
+    | App (Meta _, _, args) -> split_app (1+List.length args)
+    | _ -> zero Not_Applicable
+
+
+(** Rule application *)
+
 let first_applicable l = let rec aux = function
   | m::l -> plus m (function | Not_Applicable -> aux l | e -> zero e)
   | [] -> zero Not_Applicable
@@ -15,7 +26,7 @@ let fully_backtracking l = let rec aux = function
 let rec solve_pair sg p = fully_backtracking
   [ first_applicable [ meta_delta RIGHT; meta_delta LEFT ]
   ; first_applicable [ meta_same_same; meta_same ]
-  ; meta_inst sg RIGHT; meta_fo RIGHT; meta_inst sg LEFT; meta_fo LEFT
+  ; meta_inst sg RIGHT; meta_fo RIGHT p; meta_inst sg LEFT; meta_fo LEFT p
   ; decompose
   ; step_reduce sg RIGHT; step_reduce sg LEFT]
 

@@ -22,10 +22,7 @@ type judgment = Context.t judgment0
 (** {2 Meta aware operations} *)
 
 module type Meta = sig
-  type 'a t
-  
-  val return : 'a -> 'a t
-  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+  include Monads.Monad
   
   val fail : Unif_core.typing_error -> 'a t
 

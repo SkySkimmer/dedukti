@@ -2,6 +2,7 @@ open Basics
 open Term
 open Rule
 open Unif_core
+open Monads
 
 let coc = ref false
 
@@ -127,10 +128,7 @@ type judgment = Context.t judgment0
 (* ********************** METAS *)
 
 module type Meta = sig
-  type 'a t
-  
-  val return : 'a -> 'a t
-  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+  include Monad
   
   val fail : typing_error -> 'a t
 
@@ -155,6 +153,7 @@ module KMeta : Meta with type 'a t = 'a = struct
   
   let return x = x
   let (>>=) x f = f x
+  let (>>) x y = x;y
 
   let fail e = raise (TypingError e)
 
@@ -193,7 +192,7 @@ end = struct
 
   let fail = zero
 
-  let extract sg m = run (m >>= fun x -> solve sg >>= fun () -> return x)
+  let extract sg m = run m
 
   let unify_annot sg ctx t = if !coc then unify_sort sg ctx t else unify sg ctx t (mk_Type dloc)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)

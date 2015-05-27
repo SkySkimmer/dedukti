@@ -94,3 +94,9 @@ val meta_fo : side -> unit t
 
 val meta_inst : Signature.t -> side -> unit t
 
+
+val split_app : int -> unit t
+
+(* NB: assumes the filter and the meta's context have the same length. *)
+val narrow_meta : loc -> ident -> int -> bool list -> unit t
+

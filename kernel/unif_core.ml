@@ -325,26 +325,29 @@ let context_project l ctx = let rec aux n acc = function
   | _ -> assert false
   in aux 0 [] (l,ctx)
 
+let narrow_meta lc s n filter = meta_decl lc s n >>= fun (mctx,mty) ->
+  get >>= fun pb ->
+  let (filter,mctx') = sanitize_context pb.sigma filter mctx in
+  begin match mty with
+    | MTyped ty -> begin match sanitize_term pb.sigma filter ty with
+        | Some ty' -> return (MTyped ty')
+        | None -> zero Not_Applicable
+        end
+    | MType | MSort -> return mty
+    end >>= fun mty' ->
+  new_meta mctx' lc s mty' >>= fun mk ->
+  set_meta n (subst_l (context_project filter mctx) 0 mk)
+
 let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
   | Meta (lc,s,n,ts), Meta (_,_,n',ts') when (n=n') -> return (lc,s,n,ts,ts',[],[])
   | App (Meta (lc,s,n,ts),a,args), App (Meta (_,_,n',ts'),a',args') when (n=n') -> return (lc,s,n,ts,ts',a::args,a'::args')
   | _,_ -> zero Not_Applicable
   end >>= fun (lc,s,n,ts,ts',args,args') -> 
-  meta_decl lc s n >>= fun (mctx0,m) ->
-    let inter = subst_intersection ts ts' in get >>= fun pb ->
-    let (inter,mctx) = sanitize_context pb.sigma inter mctx0 in
-    let m = match m with
-      | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term pb.sigma inter ty)
-      | MType | MSort -> Some m in
-    match m with
-      | Some m -> new_meta mctx lc s m >>= fun mj ->
-          let mj = subst_l (context_project inter mctx0) 0 mj in
-          set_meta n mj >>= fun () ->
-          begin match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
-            | Some l -> return l
-            | None -> zero Not_Applicable
-            end
-      | None -> zero Not_Applicable)
+  let inter = subst_intersection ts ts' in
+  narrow_meta lc s n inter >>
+  match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
+    | Some l -> return l
+    | None -> zero Not_Applicable)
 
 (* returns l1,l2 such that l1++l2=l and |l1| = n *)
 let list_slice n l = let rec aux acc n l = if n=0
@@ -505,5 +508,27 @@ let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin mat
     if meta_occurs n inst then zero Not_Applicable
     else meta_set_ensure_type sg lc s n inst
   | _ -> assert false
+  )
+
+(*
+split_app and helpers
+*)
+
+(*
+[split_at n l] returns Some(l1,l2) such that |l1|=n and l=(List.rev l1)++l2 if possible
+(TODO: remove duplication with list_slice)
+*)
+let split_at n l = let rec aux n acc = fun l -> if n=0 then Some (acc,l) else match l with
+  | x::l -> aux (n-1) (x::acc) l
+  | [] -> None
+  in aux n [] l
+
+let split_app n = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
+  | App (f,a,args), App (f',a',args') -> begin match split_at n (List.rev (a::args)), split_at n (List.rev (a'::args')) with
+      | Some (a1,a2), Some (a1',a2') ->
+          return ((ctx,mk_Appl f (List.rev a2),mk_Appl f' (List.rev a2'))::(List.map2 (fun t1 t2 -> (ctx,t1,t2)) a1 a1'))
+      | _,_ -> zero Not_Applicable
+      end
+  | _,_ -> zero Not_Applicable
   )
 

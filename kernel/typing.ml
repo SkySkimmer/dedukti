@@ -145,7 +145,7 @@ module type Meta = sig
 
   val new_meta : context -> loc -> ident -> mkind -> term t
   
-  val meta_constraint : term -> (context * term) t
+  val meta_constraint : loc -> ident -> int -> (context * term) t
   
   val simpl : term -> term t
 end
@@ -174,9 +174,7 @@ module KMeta : Meta with type 'a t = 'a = struct
     
   let new_meta ctx l s _ = fail (MetaInKernel (l,s))
   
-  let meta_constraint = function
-    | Meta (l,s,_,_) -> fail (MetaInKernel (l,s))
-    | _ -> assert false
+  let meta_constraint lc s _ = fail (MetaInKernel (lc,s))
 
   let simpl x = x
 end
@@ -270,7 +268,7 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         M.new_meta ctx0 lc s MType >>= fun mk ->
         M.new_meta ctx0 lc s (MTyped mk) >>= fun mj ->
         M.return {ctx=ctx; te=mj; ty=mk;}
-    | Meta (lc,s,n,ts) as mv -> M.meta_constraint mv >>= fun (ctx0,ty0) ->
+    | Meta (lc,s,n,ts) -> M.meta_constraint lc s n >>= fun (ctx0,ty0) ->
         check_subst sg ctx ts ctx0 >>= fun ts' ->
         M.return {ctx=ctx; te=mk_Meta lc s n ts'; ty=subst_l (List.map snd ts') 0 ty0;}
 

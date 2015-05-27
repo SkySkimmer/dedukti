@@ -99,6 +99,10 @@ let new_meta ctx lc s k = get >>= fun pb -> match k with
 
 let get_decl decls n = try Some (IntMap.find n decls) with | Not_found -> None
 
+let meta_decl lc s n = get >>= fun pb -> match get_decl pb.decls n with
+  | Some (ctx,mty) -> return (ctx,mty)
+  | None -> raise (TypingError (UnknownMeta (lc,s,n)))
+
 let add_sort_pair sg ctx = function
   | Meta (lc,s,x,ts) as t -> get >>= fun pb -> begin match get_decl pb.decls x with
       | Some (_,MSort) -> return ()
@@ -113,16 +117,13 @@ let set_meta n t = get >>= fun pb ->
   if S.mem pb.sigma n then zero Not_Applicable
   else set { pb with sigma=S.add pb.sigma n t }
 
-let meta_constraint = function
-  | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
-      | Some (ctx,MTyped ty) -> return (ctx,ty)
-      | Some (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
-          set_decl n (ctx,MTyped mk) >>= fun () -> return (ctx,mk)
-      | Some (ctx,MSort) -> set_decl n (ctx,MTyped mk_Kind) >>= fun () ->
-          set_meta n (mk_Type dloc) >>= fun () -> return (ctx,mk_Kind)
-      | None -> raise (TypingError (UnknownMeta (lc,s,n)))
-      end
-  | _ -> assert false
+let meta_constraint lc s n = get >>= fun pb -> match get_decl pb.decls n with
+  | Some (ctx,MTyped ty) -> return (ctx,ty)
+  | Some (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
+      set_decl n (ctx,MTyped mk) >>= fun () -> return (ctx,mk)
+  | Some (ctx,MSort) -> set_decl n (ctx,MTyped mk_Kind) >>= fun () ->
+      set_meta n (mk_Type dloc) >>= fun () -> return (ctx,mk_Kind)
+  | None -> raise (TypingError (UnknownMeta (lc,s,n)))
 
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)
@@ -159,7 +160,7 @@ let rec expected_type sg ctx = function
   | Lam (lc,_,None,_) -> raise (TypingError (DomainFreeLambda lc))
   | Pi (lc,x,a,b) -> expected_type sg ((lc,x,a)::ctx) b
   | Hole _ -> assert false
-  | Meta (lc,s,x,ts) as mv -> meta_constraint mv >>= fun (_,ty0) ->
+  | Meta (lc,s,x,ts) -> meta_constraint lc s x >>= fun (_,ty0) ->
       return (subst_l (List.map snd ts) 0 ty0)
 
 (* returns None if there are no (unsolved) disagreement pairs *)

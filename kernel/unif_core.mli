@@ -40,8 +40,9 @@ val add_sort_pair : Signature.t -> context -> term -> unit t
 
 val new_meta : context -> loc -> ident -> mkind -> term t
 
-val meta_constraint : term -> (context*term) t
+val meta_constraint : loc -> ident -> int -> (context*term) t
 
+val meta_decl : loc -> ident -> int -> (context*mkind) t
 
 val whnf : Signature.t -> term -> term t
 

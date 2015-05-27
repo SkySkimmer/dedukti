@@ -40,7 +40,7 @@ module type Meta = sig
 
   val new_meta : context -> loc -> ident -> mkind -> term t
   
-  val meta_constraint : term -> (context * term) t
+  val meta_constraint : loc -> ident -> int -> (context * term) t
   
   val simpl : term -> term t
 end

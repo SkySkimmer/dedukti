@@ -97,17 +97,14 @@ let new_meta ctx lc s k = get >>= fun pb -> match k with
       set { pb with cpt=pb.cpt+1; decls=IntMap.add pb.cpt (ctx,k) pb.decls } >>= fun () ->
       return mj
 
-let get_decl decls n = try Some (IntMap.find n decls) with | Not_found -> None
-
-let meta_decl lc s n = get >>= fun pb -> match get_decl pb.decls n with
-  | Some (ctx,mty) -> return (ctx,mty)
-  | None -> raise (TypingError (UnknownMeta (lc,s,n)))
+let meta_decl lc s n = get >>= fun pb ->
+  try return (IntMap.find n pb.decls)
+  with | Not_found -> raise (TypingError (UnknownMeta (lc,s,n)))
 
 let add_sort_pair sg ctx = function
-  | Meta (lc,s,x,ts) as t -> get >>= fun pb -> begin match get_decl pb.decls x with
-      | Some (_,MSort) -> return ()
-      | Some _ -> new_meta ctx lc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
-      | None -> raise (TypingError (UnknownMeta (lc,s,x)))
+  | Meta (lc,s,x,ts) as t -> meta_decl lc s x >>= begin function
+      | (_,MSort) -> return ()
+      | _ -> new_meta ctx lc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
       end
   | t -> new_meta ctx dloc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
 
@@ -117,13 +114,12 @@ let set_meta n t = get >>= fun pb ->
   if S.mem pb.sigma n then zero Not_Applicable
   else set { pb with sigma=S.add pb.sigma n t }
 
-let meta_constraint lc s n = get >>= fun pb -> match get_decl pb.decls n with
-  | Some (ctx,MTyped ty) -> return (ctx,ty)
-  | Some (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
+let meta_constraint lc s n = meta_decl lc s n >>= function
+  | (ctx,MTyped ty) -> return (ctx,ty)
+  | (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
       set_decl n (ctx,MTyped mk) >>= fun () -> return (ctx,mk)
-  | Some (ctx,MSort) -> set_decl n (ctx,MTyped mk_Kind) >>= fun () ->
+  | (ctx,MSort) -> set_decl n (ctx,MTyped mk_Kind) >>= fun () ->
       set_meta n (mk_Type dloc) >>= fun () -> return (ctx,mk_Kind)
-  | None -> raise (TypingError (UnknownMeta (lc,s,n)))
 
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)
@@ -296,23 +292,21 @@ let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
   | App (Meta (lc,s,n,ts),a,args), App (Meta (_,_,n',ts'),a',args') when (n=n') -> return (lc,s,n,ts,ts',a::args,a'::args')
   | _,_ -> zero Not_Applicable
   end >>= fun (lc,s,n,ts,ts',args,args') -> 
-  get >>= fun pb -> match get_decl pb.decls n with
-    | Some (mctx0,m) -> let inter = subst_intersection ts ts' in
-        let (inter,mctx) = sanitize_context pb.sigma inter mctx0 in
-        let m = match m with
-          | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term pb.sigma inter ty)
-          | MType | MSort -> Some m in
-        begin match m with
-          | Some m -> new_meta mctx lc s m >>= fun mj ->
-              let mj = subst_l (context_project inter mctx0) 0 mj in
-              set_meta n mj >>= fun () ->
-              begin match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
-                | Some l -> return l
-                | None -> zero Not_Applicable
-                end
-          | None -> zero Not_Applicable
-          end
-    | None -> raise (TypingError (UnknownMeta (lc,s,n))))
+  meta_decl lc s n >>= fun (mctx0,m) ->
+    let inter = subst_intersection ts ts' in get >>= fun pb ->
+    let (inter,mctx) = sanitize_context pb.sigma inter mctx0 in
+    let m = match m with
+      | MTyped ty -> map_opt (fun ty -> MTyped ty) (sanitize_term pb.sigma inter ty)
+      | MType | MSort -> Some m in
+    match m with
+      | Some m -> new_meta mctx lc s m >>= fun mj ->
+          let mj = subst_l (context_project inter mctx0) 0 mj in
+          set_meta n mj >>= fun () ->
+          begin match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
+            | Some l -> return l
+            | None -> zero Not_Applicable
+            end
+      | None -> zero Not_Applicable)
 
 (* returns l1,l2 such that l1++l2=l and |l1| = n *)
 let list_slice n l = let rec aux acc n l = if n=0
@@ -349,24 +343,24 @@ let opt_filter filter l = let rec aux acc filter l = match filter,l with
 y a metavariable, ts : (ident*term) option list
 Indices which are None in ts should be irrelevant for y
 *)
-let prune lc s y ts = get >>= fun pb -> match get_decl pb.decls y with
-  | None -> raise (TypingError (UnknownMeta (lc,s,y)))
-  | Some (mctx,mty) -> let filter = List.map (function | Some _ -> true | None -> false) ts in
-      let filter,mctx' = sanitize_context pb.sigma filter mctx in
-      begin match mty with
-        | MTyped ty -> begin match sanitize_term pb.sigma filter ty with
-            | Some ty' -> return (MTyped ty')
-            | None -> zero Not_Applicable
-            end
-        | MType | MSort -> return mty
-        end >>= fun mty' ->
-      new_meta mctx' lc s mty' >>= fun mz ->
-      let mz = subst_l (context_project filter mctx) 0 mz in
-      set_meta y mz >>= fun () ->
-      begin match mz with (* not sure about this *)
-        | Meta (lc,s,z,_) -> return (mk_Meta lc s z (opt_filter filter ts))
-        | _ -> assert false
+let prune lc s y ts = meta_decl lc s y >>= fun (mctx,mty) ->
+  let filter = List.map (function | Some _ -> true | None -> false) ts in
+  get >>= fun pb ->
+  let filter,mctx' = sanitize_context pb.sigma filter mctx in
+  begin match mty with
+    | MTyped ty -> begin match sanitize_term pb.sigma filter ty with
+        | Some ty' -> return (MTyped ty')
+        | None -> zero Not_Applicable
         end
+    | MType | MSort -> return mty
+    end >>= fun mty' ->
+  new_meta mctx' lc s mty' >>= fun mz ->
+  let mz = subst_l (context_project filter mctx) 0 mz in
+  set_meta y mz >>= fun () ->
+  begin match mz with (* not sure about this *)
+    | Meta (lc,s,z,_) -> return (mk_Meta lc s z (opt_filter filter ts))
+    | _ -> assert false
+      end
 
 
 (*
@@ -421,45 +415,40 @@ let rec meta_occurs x = function
   | Meta (_,_,y,ts) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
 
 (* m is a meta whose type or kind must be the same as that of t *)
-let meta_set_ensure_type sg m t = match m with
-  | Meta (lc,s,n,_) -> get >>= fun pb -> begin match get_decl pb.decls n with
-      | Some (mctx,mty) -> begin match mty with
-          | MTyped ty -> expected_type sg mctx t >>= fun ty' ->
-              return [mctx,ty,ty']
-          | MType -> begin match t with
-              | Kind -> return []
-              | Meta (lc',s',x,_) -> begin match get_decl pb.decls x with
-                  | Some (_,MType) -> return []
-                  | Some (_,MSort) -> set_decl n (mctx,MSort) >>= fun () -> return []
-                  | Some (_,MTyped _) -> expected_type sg mctx t >>= fun ty' ->
-                      new_meta mctx lc s MSort >>= fun ty ->
-                      set_decl n (mctx,MTyped ty) >>= fun () ->
-                      return [mctx,ty,ty']
-                  | None -> raise (TypingError (UnknownMeta (lc',s',x)))
-                  end
-              | _ -> expected_type sg mctx t >>= fun ty' ->
-                  new_meta mctx lc s MSort >>= fun ty ->
-                  set_decl n (mctx,MTyped ty) >>= fun () ->
-                  return [mctx,ty,ty']
-              end
-          | MSort -> begin match t with
-              | Kind -> return []
-              | Meta (lc',s',x,_) -> begin match get_decl pb.decls x with
-                  | Some (mctx',MType) -> set_decl x (mctx',MSort) >>= fun () -> return []
-                  | Some (_,MSort) -> return []
-                  | Some (mctx',MTyped _) -> expected_type sg mctx t >>= fun ty' ->
-                      set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
-                      return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
-                  | None -> raise (TypingError (UnknownMeta (lc',s',x)))
-                  end
-              | _ -> expected_type sg mctx t >>= fun ty' ->
-                  set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
-                  return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
-              end
-          end >>= fun l -> set_meta n t >>= fun () -> return l
-      | None -> raise (TypingError (UnknownMeta (lc,s,n)))
-      end
-  | _ -> assert false
+let meta_set_ensure_type sg lc s n t =
+  meta_decl lc s n >>= fun (mctx,mty) ->
+  begin match mty with
+    | MTyped ty -> expected_type sg mctx t >>= fun ty' ->
+        return [mctx,ty,ty']
+    | MType -> begin match t with
+        | Kind -> return []
+        | Meta (lc',s',x,_) -> meta_decl lc' s' x >>= begin function
+            | (_,MType) -> return []
+            | (_,MSort) -> set_decl n (mctx,MSort) >>= fun () -> return []
+            | (_,MTyped _) -> expected_type sg mctx t >>= fun ty' ->
+                new_meta mctx lc s MSort >>= fun ty ->
+                set_decl n (mctx,MTyped ty) >>= fun () ->
+                return [mctx,ty,ty']
+            end
+        | _ -> expected_type sg mctx t >>= fun ty' ->
+            new_meta mctx lc s MSort >>= fun ty ->
+            set_decl n (mctx,MTyped ty) >>= fun () ->
+            return [mctx,ty,ty']
+        end
+    | MSort -> begin match t with
+        | Kind -> return []
+        | Meta (lc',s',x,_) -> meta_decl lc' s' x >>= begin function
+            | (mctx',MType) -> set_decl x (mctx',MSort) >>= fun () -> return []
+            | (_,MSort) -> return []
+            | (mctx',MTyped _) -> expected_type sg mctx t >>= fun ty' ->
+                set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
+                return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
+            end
+        | _ -> expected_type sg mctx t >>= fun ty' ->
+            set_decl n (mctx,MTyped mk_Kind) >>= fun () ->
+            return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
+        end
+    end >>= fun l -> set_meta n t >>= fun () -> return l
 
 let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin match active with
   | Meta _ -> return (active,[])
@@ -468,15 +457,15 @@ let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin mat
   end >>= fun (m,args) -> match m with
   | Meta (lc,s,n,ts) -> begin match Opt.fold (fun vl -> function | (_,DB (_,_,n)) -> Some (n::vl) | _ -> None) [] ts with
     | Some ts_var -> begin match Opt.fold (fun vl -> function | DB (_,_,n) -> Some (n::vl) | _ -> None) [] args with
-      | Some args_var -> return (n,ts_var,args_var)
+      | Some args_var -> return (lc,s,n,ts_var,args_var)
       | None -> zero Not_Applicable
       end
     | None -> zero Not_Applicable
-    end >>= fun (n,ts_var,args_var) ->
+    end >>= fun (lc,s,n,ts_var,args_var) ->
     let passive = Reduction.whnf sg passive in
     invert ctx n ts_var args_var passive >>= fun inst ->
     if meta_occurs n inst then zero Not_Applicable
-    else meta_set_ensure_type sg m inst
+    else meta_set_ensure_type sg lc s n inst
   | _ -> assert false
   )
 

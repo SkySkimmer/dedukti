@@ -319,8 +319,8 @@ let rec sanitize_context s l ctx = match l,ctx with
 let subst_intersection ts ts' = List.map2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
 
 let context_project l ctx = let rec aux n acc = function
-  | true::l,(lc,x,_)::ctx -> aux (n+1) ((mk_DB lc x n)::acc) (l,ctx)
-  | false::l,(lc,x,_)::ctx -> aux n acc (l,ctx)
+  | true::l,(lc,x,_)::ctx -> aux (n+1) ((x,mk_DB lc x n)::acc) (l,ctx)
+  | false::l,(lc,x,_)::ctx -> aux (n+1) acc (l,ctx)
   | [],[] -> List.rev acc
   | _ -> assert false
   in aux 0 [] (l,ctx)
@@ -335,8 +335,10 @@ let narrow_meta lc s n filter = meta_decl lc s n >>= fun (mctx,mty) ->
         end
     | MType | MSort -> return mty
     end >>= fun mty' ->
-  new_meta mctx' lc s mty' >>= fun mk ->
-  set_meta n (subst_l (context_project filter mctx) 0 mk)
+  new_meta mctx' lc s mty' >>= function
+    | Meta (lc,s,k,_) -> let mk = mk_Meta lc s k (context_project filter mctx) in
+        set_meta n mk
+    | _ -> assert false
 
 let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
   | Meta (lc,s,n,ts), Meta (_,_,n',ts') when (n=n') -> return (lc,s,n,ts,ts',[],[])
@@ -381,13 +383,11 @@ let prune lc s y ts = meta_decl lc s y >>= fun (mctx,mty) ->
         end
     | MType | MSort -> return mty
     end >>= fun mty' ->
-  new_meta mctx' lc s mty' >>= fun mz ->
-  let mz = subst_l (context_project filter mctx) 0 mz in
-  set_meta y mz >>= fun () ->
-  begin match mz with (* not sure about this *)
-    | Meta (lc,s,z,_) -> return (mk_Meta lc s z (opt_filter filter ts))
+  new_meta mctx' lc s mty' >>= function
+    | Meta (lc,s,z,_) -> let mz = mk_Meta lc s z (context_project filter mctx) in
+        set_meta y mz >>
+        return (mk_Meta lc s z (opt_filter filter ts)) (* not sure about this *)
     | _ -> assert false
-      end
 
 
 (*
@@ -429,7 +429,7 @@ let rec invert_add_lambdas ctx x argn varl t = if argn = 0 then return t
   | [] -> assert false
 
 let invert ctx x ts_var args_var t =
-  let argn,varl = List.fold_left (fun (n,l) v -> (n+1,v::l)) (0,ts_var) args_var in
+  let argn,varl = List.fold_left (fun (n,l) v -> (n+1,v::l)) (0,List.rev ts_var) args_var in
   invert_term x varl 0 t >>= fun t' ->
   invert_add_lambdas ctx x argn varl t'
 

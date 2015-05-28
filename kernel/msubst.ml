@@ -12,7 +12,9 @@ let meta_raw (sigma:t) n = try Some (IntMap.find n sigma) with | Not_found -> No
 let meta_val (sigma:t) : term -> term option = function
   | Meta (_,_,n,ts) -> begin
     try let te0 = IntMap.find n sigma in
-      let subst1 = List.map snd ts in Some (subst_l subst1 0 te0)
+      let subst1 = List.map snd ts in
+      let te = subst_l subst1 0 te0 in
+      Some te
     with | Not_found -> None
     end
   | _ -> None

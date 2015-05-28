@@ -17,18 +17,18 @@ eq : A : ? -> U A -> U A -> type.
 
 eq_refl : A : ? -> a : U A -> U (eq A a a).
 
-`eq_rect : A : ? -> a : U A -> P : (b : U A -> e : U (eq A a b) -> ?{"type"}) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
+`eq_rect : A : ? -> a : U A -> P : (b : U A -> e : U (eq A a b) -> ?) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
 
 [A : ?, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
 
-transport (A : ?) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
- := eq_rect A x (a : U A => p : U (eq A x a) => P a) H y e.
+transport (A : type) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
+ := eq_rect ? x (a : U A => p : U (eq A x a) => P a) H y e.
 
-eq_inverse (A : type) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)
- := transport A (a : U A => eq A a x) x y p (eq_refl A x).
+eq_inverse (A : ?) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)
+ := transport A (a : ? => eq ? a x) x y p (eq_refl A x).
 
-ap (A : type) (B : type) (f : U (fun A B)) (x : U A) : y : U A -> p : U (eq A x y) -> U (eq B (f x) (f y))
- := eq_rect A x (y : U A => p : U (eq A x y) => eq B (f x) (f y)) (eq_refl B (f x)).
+ap (A : ?) (B : type) (f : U (fun A B)) (x : U A) : y : U A -> p : U (eq A x y) -> U (eq B (f x) (f y))
+ := eq_rect ? x (y : U A => p : U (eq A x y) => eq B (f x) (f y)) (eq_refl B (f x)).
 
 transport_const (A : type) (B : type) (x1 : U A) (x2 : U A) (p : U (eq A x1 x2)) (y : U B)
  : U (eq B (transport A (x : U A => B) x1 x2 p y) y)

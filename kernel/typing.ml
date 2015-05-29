@@ -128,28 +128,45 @@ type judgment = Context.t judgment0
 (* ********************** METAS *)
 
 module type Meta = sig
-  include Monad
-  
-  val fail : typing_error -> 'a t
+  include Monads.Monad
+
+  type ctx
+  type jdg
+
+  val mkJ : ctx -> term -> term -> jdg
+  val j_ctx : jdg -> ctx
+  val j_te : jdg -> term
+  val j_ty : jdg -> term
+
+  val fail : Unif_core.typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
-  
+
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
-  
+
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
-  
+
   val unify : Signature.t -> context -> term -> term -> bool t
   val unify_sort : Signature.t -> context -> term -> bool t
 
   val new_meta : context -> loc -> ident -> mkind -> term t
-  
+
   val meta_constraint : loc -> ident -> int -> (context * term) t
-  
+
   val simpl : term -> term t
 end
 
-module KMeta : Meta with type 'a t = 'a = struct
+module KMeta : Meta with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
+ = struct
   type 'a t = 'a
+  
+  type ctx = Context.t
+  type jdg = judgment
+  
+  let mkJ ctx te ty = {ctx=ctx; te=te; ty=ty;}
+  let j_ctx j = j.ctx
+  let j_te j = j.te
+  let j_ty j = j.ty
   
   let return x = x
   let (>>=) x f = f x
@@ -179,7 +196,7 @@ module KMeta : Meta with type 'a t = 'a = struct
 end
 
 module RMeta : sig
-  include Meta
+  include Meta with type ctx = context and type jdg = (context*term*term)
   
   type problem
   
@@ -189,6 +206,14 @@ module RMeta : sig
 end = struct
   include Unif_core
   include Unifier
+
+  type ctx = context
+  type jdg = context*term*term
+  
+  let mkJ ctx te ty = (ctx,te,ty)
+  let j_ctx (ctx,_,_) = ctx
+  let j_te (_,te,_) = te
+  let j_ty (_,_,ty) = ty
 
   let fail = zero
 

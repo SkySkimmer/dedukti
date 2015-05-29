@@ -23,28 +23,32 @@ type judgment = Context.t judgment0
 
 module type Meta = sig
   include Monads.Monad
-  
+
+  type ctx
+  type jdg
+
+  val mkJ : ctx -> term -> term -> jdg
+  val j_ctx : jdg -> ctx
+  val j_te : jdg -> term
+  val j_ty : jdg -> term
+
   val fail : Unif_core.typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
-  
+
   val add : Signature.t -> loc -> ident -> judgment -> Context.t t
-  
+
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
-  
+
   val unify : Signature.t -> context -> term -> term -> bool t
   val unify_sort : Signature.t -> context -> term -> bool t
 
   val new_meta : context -> loc -> ident -> mkind -> term t
-  
+
   val meta_constraint : loc -> ident -> int -> (context * term) t
-  
+
   val simpl : term -> term t
 end
-
-module KMeta : Meta with type 'a t = 'a
-
-module RMeta : Meta
 
 (** {2 Type Inference/Checking} *)
 
@@ -64,8 +68,6 @@ end
 module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t
 
 module KRefine : RefinerS with type 'a t = 'a
-
-module MetaRefine : RefinerS with type 'a t = 'a RMeta.t
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of

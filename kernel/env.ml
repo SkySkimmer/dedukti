@@ -2,7 +2,6 @@ open Basics
 open Term
 open Rule
 open Typing
-open Unif_core
 open Signature
 open Refine
 

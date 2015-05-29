@@ -32,7 +32,7 @@ let pp_context2 out = function
     Printf.fprintf out " in context:\n%a" pp_context ctx
 
 let fail_typing_error err =
-  let open Unif_core in
+  let open Typing in
     match err with
       | KindIsNotTypable -> fail dloc "Kind is not typable."
       | ConvertibilityError (te,ctx,exp,inf) ->

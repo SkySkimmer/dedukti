@@ -1,6 +1,7 @@
 open Basics
 open Term
 open Monads
+open Typing
 
 module S = Msubst
 
@@ -13,24 +14,6 @@ let mk_Appl t = function
 let mkind_map f = function
   | MTyped ty -> MTyped (f ty)
   | MType | MSort as m -> m
-
-type typing_error =
-  | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
-  | DomainFreeLambda of loc
-  | MetaInKernel of loc*ident
-  | InferSortMeta of loc*ident
-  | UnknownMeta of loc*ident*int
-  | DecomposeDomainFreeLambdas
-  | CannotSolveDeferred
-  | Not_Unifiable
-  | Not_Applicable
-
-exception TypingError of typing_error
 
 type mdecl = context*mkind
 

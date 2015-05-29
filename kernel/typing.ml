@@ -1,8 +1,25 @@
 open Basics
 open Term
 open Rule
-open Unif_core
 open Monads
+
+type typing_error =
+  | KindIsNotTypable
+  | ConvertibilityError of term*context*term*term
+  | VariableNotFound of loc*ident*int*context
+  | SortExpected of term*context*term
+  | ProductExpected of term*context*term
+  | InexpectedKind of term*context
+  | DomainFreeLambda of loc
+  | MetaInKernel of loc*ident
+  | InferSortMeta of loc*ident
+  | UnknownMeta of loc*ident*int
+  | DecomposeDomainFreeLambdas
+  | CannotSolveDeferred
+  | Not_Unifiable
+  | Not_Applicable
+
+exception TypingError of typing_error
 
 let coc = ref false
 
@@ -142,7 +159,7 @@ module type Meta = sig
 
   val to_context : ctx -> context
 
-  val fail : Unif_core.typing_error -> 'a t
+  val fail : typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 

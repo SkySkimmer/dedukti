@@ -1,24 +1,7 @@
 open Basics
 open Term
 open Monads
-
-type typing_error =
-  | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
-  | DomainFreeLambda of loc
-  | MetaInKernel of loc*ident
-  | InferSortMeta of loc*ident
-  | UnknownMeta of loc*ident*int
-  | DecomposeDomainFreeLambdas
-  | CannotSolveDeferred
-  | Not_Unifiable
-  | Not_Applicable
-
-exception TypingError of typing_error
+open Typing
 
 (* A monad with effects, backtracking and restricted state operations *)
 include Monad

@@ -1,6 +1,7 @@
 open Basics
 open Term
 open Unif_core
+open Typing
 
 (** Rules *)
 

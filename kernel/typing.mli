@@ -57,7 +57,7 @@ end
 
 (** {2 Type Inference/Checking} *)
 
-module type RefinerS = sig
+module type ElaborationS = sig
   type 'a t
   type ctx
   type jdg
@@ -72,9 +72,9 @@ module type RefinerS = sig
   val infer_pattern : Signature.t -> ctx -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
 end
 
-module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t and type ctx = M.ctx and type jdg = M.jdg
+module Elaboration (M:Meta) : ElaborationS with type 'a t = 'a M.t and type ctx = M.ctx and type jdg = M.jdg
 
-module KRefine : RefinerS with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
+module Checker : ElaborationS with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of

@@ -4,6 +4,7 @@ open Rule
 open Typing
 open Unif_core
 open Signature
+open Refine
 
 type env_error =
   | EnvErrorType of typing_error
@@ -51,13 +52,13 @@ let _define_op (l:loc) (id:ident) (jdg:judgment) =
   Signature.add_declaration !sg l id jdg.ty
 
 let declare_constant l id ty : (unit,env_error) error =
-  try OK ( _declare_constant l id (inference !sg ty) )
+  try OK ( _declare_constant l id (Refine.inference !sg ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let declare_definable l id ty : (unit,env_error) error =
-  try OK ( _declare_definable l id (inference !sg ty) )
+  try OK ( _declare_definable l id (Refine.inference !sg ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
@@ -66,8 +67,8 @@ let define l id te ty_opt =
   try
     begin
       let jdg = match ty_opt with
-        | None -> inference !sg te
-        | Some ty -> checking !sg te ty
+        | None -> Refine.inference !sg te
+        | Some ty -> Refine.checking !sg te ty
       in
       match jdg.ty with
       | Kind -> Err (KindLevelDefinition (l,id))
@@ -80,49 +81,49 @@ let define l id te ty_opt =
 let define_op l id te ty_opt =
   try
     match ty_opt with
-      | None -> OK ( _define_op l id (inference !sg te) )
-      | Some ty -> OK ( _define_op l id (checking !sg te ty) )
+      | None -> OK ( _define_op l id (Refine.inference !sg te) )
+      | Some ty -> OK ( _define_op l id (Refine.checking !sg te ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let add_rules (rules: rule list) : (unit,env_error) error =
   try
-    let _ = List.iter (check_rule !sg) rules in
+    let _ = List.iter (Refine.check_rule !sg) rules in
       OK (Signature.add_rules !sg rules)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let infer te =
-  try  OK (inference !sg te).ty
+  try  OK (Refine.inference !sg te).ty
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let check te ty =
-  try OK (ignore(checking !sg te ty))
+  try OK (ignore(Refine.checking !sg te ty))
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let whnf te =
   try
-    let _ = inference !sg te in OK (Reduction.whnf !sg te)
+    let _ = Refine.inference !sg te in OK (Reduction.whnf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let hnf te =
   try
-    let _ = inference !sg te in OK (Reduction.hnf !sg te)
+    let _ = Refine.inference !sg te in OK (Reduction.hnf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let snf te =
   try
-    let _ = inference !sg te in OK (Reduction.snf !sg te)
+    let _ = Refine.inference !sg te in OK (Reduction.snf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
@@ -131,15 +132,15 @@ let unsafe_snf te = Reduction.snf !sg te
 
 let one te =
   try
-    let _ = inference !sg te in OK (Reduction.one_step !sg te)
+    let _ = Refine.inference !sg te in OK (Reduction.one_step !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let are_convertible te1 te2 =
   try
-    let _ = inference !sg te1 in
-    let _ = inference !sg te2 in
+    let _ = Refine.inference !sg te1 in
+    let _ = Refine.inference !sg te2 in
       OK (Reduction.are_convertible !sg te1 te2)
   with
     | SignatureError e -> Err (EnvErrorSignature e)

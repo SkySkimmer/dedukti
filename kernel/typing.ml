@@ -149,6 +149,7 @@ module type Meta = sig
   val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
   val unsafe_add : ctx -> loc -> ident -> term -> ctx
 
+  (* We could almost expand this function to get rid of Meta.unsafe_add above, but it wouldn't work when checking patterns. *)
   val pi : Signature.t -> ctx -> term -> (loc*ident*term*term) option t
 
   val unify : Signature.t -> ctx -> term -> term -> bool t

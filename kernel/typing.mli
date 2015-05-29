@@ -27,23 +27,28 @@ module type Meta = sig
   type ctx
   type jdg
 
-  val mkJ : ctx -> term -> term -> jdg
-  val j_ctx : jdg -> ctx
-  val j_te : jdg -> term
-  val j_ty : jdg -> term
+  val get_type : ctx -> loc -> ident -> int -> term
+
+  val judge : ctx -> term -> term -> jdg
+  val jdg_ctx : jdg -> ctx
+  val jdg_te : jdg -> term
+  val jdg_ty : jdg -> term
+
+  val to_context : ctx -> context
 
   val fail : Unif_core.typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
-  val ctx_add : Signature.t -> loc -> ident -> judgment -> Context.t t
+  val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
+  val unsafe_add : ctx -> loc -> ident -> term -> ctx
 
-  val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
+  val pi : Signature.t -> ctx -> term -> (loc*ident*term*term) option t
 
-  val unify : Signature.t -> context -> term -> term -> bool t
-  val unify_sort : Signature.t -> context -> term -> bool t
+  val unify : Signature.t -> ctx -> term -> term -> bool t
+  val unify_sort : Signature.t -> ctx -> term -> bool t
 
-  val new_meta : context -> loc -> ident -> mkind -> term t
+  val new_meta : ctx -> loc -> ident -> mkind -> term t
 
   val meta_constraint : loc -> ident -> int -> (context * term) t
 
@@ -54,20 +59,22 @@ end
 
 module type RefinerS = sig
   type 'a t
+  type ctx
+  type jdg
 
-  val infer       : Signature.t -> Context.t -> term -> judgment t
+  val infer       : Signature.t -> ctx -> term -> jdg t
   (** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
 
-  val check       : Signature.t -> term -> judgment -> judgment t
+  val check       : Signature.t -> term -> jdg -> jdg t
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
   
-  val infer_pattern : Signature.t -> Context.t -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
+  val infer_pattern : Signature.t -> ctx -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
 end
 
-module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t
+module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t and type ctx = M.ctx and type jdg = M.jdg
 
-module KRefine : RefinerS with type 'a t = 'a
+module KRefine : RefinerS with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
 
 val checking    : Signature.t -> term -> term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of

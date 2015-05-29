@@ -142,7 +142,7 @@ module type Meta = sig
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
-  val add : Signature.t -> loc -> ident -> judgment -> Context.t t
+  val ctx_add : Signature.t -> loc -> ident -> judgment -> Context.t t
 
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
 
@@ -176,7 +176,7 @@ module KMeta : Meta with type 'a t = 'a and type ctx = Context.t and type jdg = 
 
   let fold = List.fold_left
   
-  let add _ = Context.add
+  let ctx_add _ = Context.add
   
   let unify sg ctx t u = Reduction.are_convertible sg t u
 
@@ -222,7 +222,7 @@ end = struct
   let unify_annot sg ctx t = if !coc then unify_sort sg ctx t else unify sg ctx t (mk_Type dloc)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
 
-  let add sg l x jdg = let ctx0 = Context.to_context jdg.ctx in
+  let ctx_add sg l x jdg = let ctx0 = Context.to_context jdg.ctx in
     unify_annot sg ctx0 jdg.ty >>= fun b ->
     if b then return (Context.unsafe_add jdg.ctx l x jdg.te)
     else fail (ConvertibilityError (jdg.te, ctx0, mk_Type dloc, jdg.ty))
@@ -273,14 +273,14 @@ module Refiner (M:Meta) : RefinerS with type 'a t = 'a M.t = struct
         check_app sg jdg_f [] [] (a::args)
     | Pi (l,x,a,b) ->
         infer sg ctx a >>= fun jdg_a ->
-        M.add sg l x jdg_a >>= fun ctx2 ->
+        M.ctx_add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
         M.unify_sort sg (Context.to_context ctx) jdg_b.ty >>= fun b -> if b
           then M.return { ctx=ctx; te=mk_Pi l x jdg_a.te jdg_b.te; ty=jdg_b.ty }
           else fail (SortExpected (jdg_b.te, Context.to_context jdg_b.ctx, jdg_b.ty))
     | Lam  (l,x,Some a,b) ->
         infer sg ctx a >>= fun jdg_a ->
-        M.add sg l x jdg_a >>= fun ctx2 ->
+        M.ctx_add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
           ( match jdg_b.ty with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
               | Kind -> fail (InexpectedKind (jdg_b.te, Context.to_context jdg_b.ctx))
@@ -405,7 +405,7 @@ let checking sg (te:term) (ty_exp:term) : judgment =
 
 let check_rule sg (ctx,le,ri:rule) : unit =
   let ((ctx,ri),pb) = RMeta.extract sg (RMeta.(>>=)
-    (RMeta.fold (fun ctx (l,id,ty) -> RMeta.(>>=) (MetaRefine.infer sg ctx ty) (RMeta.add sg l id)) Context.empty (List.rev ctx))
+    (RMeta.fold (fun ctx (l,id,ty) -> RMeta.(>>=) (MetaRefine.infer sg ctx ty) (RMeta.ctx_add sg l id)) Context.empty (List.rev ctx))
     (fun ctx -> RMeta.(>>=) (MetaRefine.infer_pattern sg ctx 0 SS.identity le)
     (fun (ty_inf,sigma) ->
     let ri2 =

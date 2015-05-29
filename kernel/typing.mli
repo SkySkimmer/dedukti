@@ -36,7 +36,7 @@ module type Meta = sig
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
-  val add : Signature.t -> loc -> ident -> judgment -> Context.t t
+  val ctx_add : Signature.t -> loc -> ident -> judgment -> Context.t t
 
   val pi : Signature.t -> Context.t -> term -> (loc*ident*term*term) option t
 

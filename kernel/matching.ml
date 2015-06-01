@@ -3,7 +3,7 @@ open Term
 
 exception NotUnifiable
 
-let permute (dbs:int LList.t) (te:term) : term =
+let permute (dbs:int LList.t) (te:typed term) : typed term =
   let size = LList.len dbs in
   let rec find n cpt = function
     | [] -> raise NotUnifiable
@@ -19,13 +19,13 @@ let permute (dbs:int LList.t) (te:term) : term =
     | Lam (l,x,a,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi  dloc x (aux k a) (aux (k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Meta (_,s,n,ts) -> mk_Meta dloc s n (List.map (fun (x,t) -> x,aux k t) ts)
+    | Extra (_,ex)  -> ex.exfalso
   in aux 0 te
 
 
 (* Find F such that F (DB [k_0]) ... (DB [k_n]) =~ [te]
  * when the k_i are distinct *)
-let resolve (k_lst:int LList.t) (te:term) : term =
+let resolve (k_lst:int LList.t) (te:typed term) : typed term =
   let rec add_lam te = function
     | [] -> te
     | _::lst -> add_lam (mk_Lam dloc qmark None te) lst

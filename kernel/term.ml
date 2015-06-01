@@ -43,6 +43,13 @@ type 'a tkind =
   | Pretyped : pretyped tkind
   | Typed : typed tkind
 
+let rec generalize_typed = function
+  | Kind | Type _ | DB _ | Const _ as t -> t
+  | Lam (lc,x,Some a,b) -> Lam (lc,x,Some (generalize_typed a),generalize_typed b)
+  | Lam (lc,x,None,b) -> Lam (lc,x,None,generalize_typed b)
+  | Pi (lc,x,a,b) -> Pi (lc,x,generalize_typed a,generalize_typed b)
+  | Extra (_,ex) -> ex.exfalso
+
 let rec term_eq (type a) (k:a tkind) (t1:a term) (t2:a term) =
   (* t1 == t2 || *)
   match t1, t2 with

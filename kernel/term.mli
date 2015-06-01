@@ -37,6 +37,8 @@ type 'a tkind =
   | Pretyped : pretyped tkind
   | Typed : typed tkind
 
+val generalize_typed : typed term -> 'a term
+
 (* Syntactic equality / Alpha-equivalence *)
 val term_eq : 'a tkind -> 'a term -> 'a term -> bool
 

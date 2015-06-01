@@ -2,16 +2,16 @@ open Term
 (** Term reduction and conversion test. *)
 
 (** Head Normal Form *)
-val hnf         : Signature.t -> term -> term
+val hnf         : 'a tkind -> Signature.t -> 'a term -> 'a term
 
 (** Weak Head Normal Form *)
-val whnf        : Signature.t -> term -> term
+val whnf        : 'a tkind -> Signature.t -> 'a term -> 'a term
 
 (** Strong Normal Form *)
-val snf         : Signature.t -> term -> term
+val snf         : 'a tkind -> Signature.t -> 'a term -> 'a term
 
 (** Conversion Test *)
-val are_convertible             : Signature.t -> term -> term -> bool
+val are_convertible             : 'a tkind -> Signature.t -> 'a term -> 'a term -> bool
 
 (**One Step Reduction*)
-val one_step                    : Signature.t -> term -> term option
+val one_step                    : 'a tkind -> Signature.t -> 'a term -> 'a term option

@@ -12,7 +12,16 @@ type 'a term = private
   | App   of 'a term * 'a term * 'a term list (** f a1 [ a2 ; ... an ] , f not an App *)
   | Lam   of loc*ident*'a term option*'a term (** Lambda abstraction *)
   | Pi    of loc*ident*'a term*'a term        (** Pi abstraction *)
-  | Extra of loc*'a
+  | Extra of loc*'a tkind*'a
+
+and 'a tkind =
+  | Untyped : untyped tkind
+  | Pretyped : pretyped tkind
+  | Typed : typed tkind
+
+and untyped = { hole : ident }
+and pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
+and typed = { exfalso : 'r. 'r }
 
 val get_loc : 'a term -> loc
 
@@ -24,33 +33,22 @@ val mk_Lam      : loc -> ident -> 'a term option -> 'a term -> 'a term
 val mk_App      : 'a term -> 'a term -> 'a term list -> 'a term
 val mk_Pi       : loc -> ident -> 'a term -> 'a term -> 'a term
 val mk_Arrow    : loc -> 'a term -> 'a term -> 'a term
-val mk_Extra    : loc -> 'a -> 'a term
-
-(** Kinds of terms *)
-
-type untyped = { hole : ident }
-type pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
-type typed = { exfalso : 'r. 'r }
+val mk_Extra    : loc -> 'a tkind -> 'a -> 'a term
 
 val mk_Hole     : loc -> ident -> untyped term
 val mk_Meta     : loc -> ident -> int -> (ident*pretyped term) list -> pretyped term
 
-type 'a tkind =
-  | Untyped : untyped tkind
-  | Pretyped : pretyped tkind
-  | Typed : typed tkind
-
 val generalize_typed : typed term -> 'a term
 
 (* Syntactic equality / Alpha-equivalence *)
-val term_eq : 'a tkind -> 'a term -> 'a term -> bool
+val term_eq : 'a term -> 'a term -> bool
 
-val pp_term     : 'a tkind -> out_channel -> 'a term -> unit
+val pp_term     : out_channel -> 'a term -> unit
 
 (** {2 Contexts} *)
 
 type 'a context = ( loc * ident * 'a term ) list
-val pp_context  : 'a tkind -> out_channel -> 'a context -> unit
+val pp_context  : out_channel -> 'a context -> unit
 
 (** {3 Unification candidates} *)
 

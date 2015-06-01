@@ -30,7 +30,7 @@ val make                : ident -> t
 val get_name            : t -> ident
 
 val export              : t -> bool
-val get_type            : t -> loc -> ident -> ident -> term
+val get_type            : t -> loc -> ident -> ident -> typed term
 val is_constant         : t -> loc -> ident -> ident -> bool
 val get_dtree           : t -> loc -> ident -> ident -> (int*dtree) option
 val add_declaration     : t -> loc -> ident -> term -> unit

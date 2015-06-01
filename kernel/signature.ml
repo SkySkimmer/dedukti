@@ -21,7 +21,7 @@ exception SignatureError of signature_error
 
 type dtree_or_def =
   | DoD_None
-  | DoD_Def of term
+  | DoD_Def of typed term
   | DoD_Dtree of int*dtree
 
 module H = Hashtbl.Make(
@@ -32,8 +32,8 @@ struct
 end )
 
 type rw_infos =
-  | Constant of term
-  | Definable of term * (rule_infos list*int*dtree) option
+  | Constant of typed term
+  | Definable of typed term * (rule_infos list*int*dtree) option
 
 type t = { name:ident; tables:(rw_infos H.t) H.t }
 

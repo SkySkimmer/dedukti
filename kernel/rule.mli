@@ -9,11 +9,11 @@ type pattern =
   | Var         of loc*ident*int*pattern list
   | Pattern     of loc*ident*ident*pattern list
   | Lambda      of loc*ident*pattern
-  | Brackets    of term
+  | Brackets    of typed term
 
 val get_loc_pat : pattern -> loc
 
-val pattern_to_term : pattern -> term
+val pattern_to_term : pattern -> typed term
 
 val pp_pattern  : out_channel -> pattern -> unit
 
@@ -28,19 +28,19 @@ type pattern2 =
 
 (** {2 Rewrite Rules} *)
 
-type rule = context * pattern * term
+type rule = typed context * pattern * typed term
 
 type constr =
-  | Linearity of term*term (* change to int*int ? *)
-  | Bracket of term*term (* change to int*term ? *)
+  | Linearity of typed term*typed term (* change to int*int ? *)
+  | Bracket of typed term*typed term (* change to int*term ? *)
 
 type rule_infos = {
   l:loc;
-  ctx:context;
+  ctx:typed context;
   md:ident;
   id:ident;
   args:pattern list;
-  rhs:term;
+  rhs:typed term;
   (* *)
   esize:int;
   l_args:pattern2 array;
@@ -75,7 +75,7 @@ type pre_context =
 
 type dtree =
   | Switch  of int * (case*dtree) list * dtree option
-  | Test    of pre_context * constr list * term * dtree option
+  | Test    of pre_context * constr list * typed term * dtree option
 
 val pp_dtree    : int -> out_channel -> dtree -> unit
 val pp_rw       : out_channel -> (ident*ident*int*dtree) -> unit

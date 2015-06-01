@@ -5,7 +5,7 @@ type pattern =
   | Var         of loc*ident*int*pattern list
   | Pattern     of loc*ident*ident*pattern list
   | Lambda      of loc*ident*pattern
-  | Brackets    of term
+  | Brackets    of typed term
 
 let get_loc_pat = function
   | Var (l,_,_,_) | Pattern (l,_,_,_)
@@ -14,7 +14,7 @@ let get_loc_pat = function
 
 type top = ident*pattern array
 
-type rule = context * pattern * term
+type rule = typed context * pattern * typed term
 
 type pattern2 =
   | Joker2
@@ -24,16 +24,16 @@ type pattern2 =
   | BoundVar2    of ident*int*pattern2 array
 
 type constr =
-  | Linearity of term*term (* change to int*int ? *)
-  | Bracket of term*term (* change to int*term ? *)
+  | Linearity of typed term*typed term (* change to int*int ? *)
+  | Bracket of typed term*typed term (* change to int*term ? *)
 
 type rule_infos = {
   l:loc;
-  ctx:context;
+  ctx:typed context;
   md:ident;
   id:ident;
   args:pattern list;
-  rhs:term;
+  rhs:typed term;
   (* *)
   esize:int;
   l_args:pattern2 array;
@@ -54,7 +54,7 @@ type pre_context =
 
 type dtree =
   | Switch  of int * (case*dtree) list * dtree option
-  | Test    of pre_context * constr list * term * dtree option
+  | Test    of pre_context * constr list * typed term * dtree option
 
 let pattern_to_term p =
   let rec aux k = function
@@ -74,7 +74,7 @@ open Printf
 let rec pp_pattern out = function
   | Var (_,x,n,[]) -> fprintf out "%a[%i]" pp_ident x n
   | Var (_,x,n,lst) -> fprintf out "%a[%i] %a" pp_ident x n (pp_list " " pp_pattern_wp) lst
-  | Brackets t -> fprintf out "{ %a }" pp_term t
+  | Brackets t -> fprintf out "{ %a }" (pp_term Typed) t
   | Pattern (_,m,v,[]) -> fprintf out "%a.%a" pp_ident m pp_ident v
   | Pattern (_,m,v,pats) -> fprintf out "%a.%a %a" pp_ident m pp_ident v (pp_list " " pp_pattern_wp) pats
   | Lambda (_,x,p) -> fprintf out "%a => %a" pp_ident x pp_pattern p
@@ -84,9 +84,9 @@ and pp_pattern_wp out = function
 
 let pp_rule out (ctx,pat,te) =
   fprintf out "[%a] %a --> %a"
-    pp_context ctx
+    (pp_context Typed) ctx
     pp_pattern pat
-    pp_term te
+    (pp_term Typed) te
 
 let pp_frule out r = pp_rule out (r.ctx,Pattern(r.l,r.md,r.id,r.args),r.rhs)
 
@@ -97,16 +97,16 @@ let pp_pc out = function
   | MillerPattern _ -> fprintf out "Mi"
 
 let rec pp_dtree t out = function
-  | Test (pc,[],te,None)   -> fprintf out "(%a) %a" pp_pc pc pp_term te
+  | Test (pc,[],te,None)   -> fprintf out "(%a) %a" pp_pc pc (pp_term Typed) te
   | Test (_,[],_,def)      -> assert false
   | Test (pc,lst,te,def)  ->
       let tab = tab t in
       let aux out = function
-        | Linearity (i,j) -> fprintf out "%a =l %a" pp_term i pp_term j
-        | Bracket (i,j) -> fprintf out "%a =b %a" pp_term i pp_term j
+        | Linearity (i,j) -> fprintf out "%a =l %a" (pp_term Typed) i (pp_term Typed) j
+        | Bracket (i,j) -> fprintf out "%a =b %a" (pp_term Typed) i (pp_term Typed) j
       in
       fprintf out "\n%sif %a then (%a) %a\n%selse (%a) %a" tab (pp_list " and " aux) lst
-        pp_pc pc pp_term te tab pp_pc pc (pp_def (t+1)) def
+        pp_pc pc (pp_term Typed) te tab pp_pc pc (pp_def (t+1)) def
   | Switch (i,cases,def)->
       let tab = tab t in
       let pp_case out = function

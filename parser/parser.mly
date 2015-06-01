@@ -1,10 +1,10 @@
 %parameter <M :
   sig
     val mk_prelude     : Basics.loc -> Basics.ident -> unit
-    val mk_declaration : Basics.loc -> Basics.ident -> Term.term -> unit
-    val mk_definition  : Basics.loc -> Basics.ident -> Term.term option -> Term.term -> unit
-    val mk_definable   : Basics.loc -> Basics.ident -> Term.term -> unit
-    val mk_opaque      : Basics.loc -> Basics.ident -> Term.term option -> Term.term -> unit
+    val mk_declaration : Basics.loc -> Basics.ident -> Term.untyped Term.term -> unit
+    val mk_definition  : Basics.loc -> Basics.ident -> Term.untyped Term.term option -> Term.untyped Term.term -> unit
+    val mk_definable   : Basics.loc -> Basics.ident -> Term.untyped Term.term -> unit
+    val mk_opaque      : Basics.loc -> Basics.ident -> Term.untyped Term.term option -> Term.untyped Term.term -> unit
     val mk_rules       : Rule.rule list -> unit
     val mk_command     : Basics.loc -> Cmd.command -> unit
     val mk_ending      : unit -> unit

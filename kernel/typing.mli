@@ -4,11 +4,11 @@ open Basics
 
 type typing_error =
   | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
+  | ConvertibilityError : 'a tkind*'a term*'a context*'a term*'a term -> typing_error
+  | VariableNotFound : 'a tkind*loc*ident*int*'a context -> typing_error
+  | SortExpected : 'a tkind*'a term*'a context*'a term -> typing_error
+  | ProductExpected : 'a tkind*'a term*'a context*'a term -> typing_error
+  | InexpectedKind : 'a tkind*'a term*'a context -> typing_error
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
@@ -24,14 +24,14 @@ exception TypingError of typing_error
 
 val coc : bool ref
 
-type 'a judgment0 = private { ctx:'a; te:term; ty: term; }
+type 'a judgment0 = private { ctx:'a; te:typed term; ty:typed term; }
 
 module Context :
 sig
   type t
   val empty : t
   val add : loc -> ident -> t judgment0 -> t
-  val get_type : t -> loc -> ident -> int -> term
+  val get_type : t -> loc -> ident -> int -> typed term
   val is_empty : t -> bool
 end
 
@@ -42,63 +42,67 @@ type judgment = Context.t judgment0
 module type Meta = sig
   include Monads.Monad
 
+  type pextra
+  type extra
   type ctx
   type jdg
 
-  val get_type : ctx -> loc -> ident -> int -> term
+  val get_type : ctx -> loc -> ident -> int -> extra term
 
-  val judge : ctx -> term -> term -> jdg
+  val judge : ctx -> extra term -> extra term -> jdg
   val jdg_ctx : jdg -> ctx
-  val jdg_te : jdg -> term
-  val jdg_ty : jdg -> term
+  val jdg_te : jdg -> extra term
+  val jdg_ty : jdg -> extra term
 
-  val to_context : ctx -> context
+  val to_context : ctx -> extra context
 
   val fail : typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
   val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
-  val unsafe_add : ctx -> loc -> ident -> term -> ctx
+  val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
-  val pi : Signature.t -> ctx -> term -> (loc*ident*term*term) option t
+  val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
-  val unify : Signature.t -> ctx -> term -> term -> bool t
-  val unify_sort : Signature.t -> ctx -> term -> bool t
+  val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
+  val unify_sort : Signature.t -> ctx -> extra term -> bool t
 
-  val new_meta : ctx -> loc -> ident -> mkind -> term t
+  val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
+                    Signature.t -> ctx -> loc -> pextra -> jdg t
 
-  val meta_constraint : loc -> ident -> int -> (context * term) t
-
-  val simpl : term -> term t
+  val simpl : extra term -> extra term t
 end
 
 (** {2 Type Inference/Checking} *)
 
 module type ElaborationS = sig
   type 'a t
+
+  type pextra
+  type extra
   type ctx
   type jdg
 
-  val infer       : Signature.t -> ctx -> term -> jdg t
+  val infer       : Signature.t -> ctx -> pextra term -> jdg t
   (** [infer sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and context [ctx] *)
 
-  val check       : Signature.t -> term -> jdg -> jdg t
+  val check       : Signature.t -> pextra term -> jdg -> jdg t
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
   
-  val infer_pattern : Signature.t -> ctx -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
+  val infer_pattern : Signature.t -> ctx -> int -> extra Subst.S.t -> pattern -> (extra term*extra Subst.S.t) t
 end
 
-module Elaboration (M:Meta) : ElaborationS with type 'a t = 'a M.t and type ctx = M.ctx and type jdg = M.jdg
+module Elaboration (M:Meta) : ElaborationS with type 'a t = 'a M.t and type pextra = M.pextra and type extra = M.extra and type ctx = M.ctx and type jdg = M.jdg
 
-module Checker : ElaborationS with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
+module Checker : ElaborationS with type 'a t = 'a and type pextra = typed and type extra = typed and type ctx = Context.t and type jdg = judgment
 
-val checking    : Signature.t -> term -> term -> judgment
+val checking    : Signature.t -> typed term -> typed term -> judgment
 (** [checking sg te ty] checks, in the empty context, that [ty] is the type of
   * [te]. [ty] is typechecked first. *)
 
-val inference   : Signature.t -> term -> judgment
+val inference   : Signature.t -> typed term -> judgment
 (** [inference sg ctx te] builds a typing judgment for the term [te] in the signature [sg] and empty context. *)
 
 val check_rule  : Signature.t -> rule -> unit

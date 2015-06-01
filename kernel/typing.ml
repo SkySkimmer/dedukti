@@ -5,11 +5,11 @@ open Monads
 
 type typing_error =
   | KindIsNotTypable
-  | ConvertibilityError of term*context*term*term
-  | VariableNotFound of loc*ident*int*context
-  | SortExpected of term*context*term
-  | ProductExpected of term*context*term
-  | InexpectedKind of term*context
+  | ConvertibilityError : 'a tkind*'a term*'a context*'a term*'a term -> typing_error
+  | VariableNotFound : 'a tkind*loc*ident*int*'a context -> typing_error
+  | SortExpected : 'a tkind*'a term*'a context*'a term -> typing_error
+  | ProductExpected : 'a tkind*'a term*'a context*'a term -> typing_error
+  | InexpectedKind : 'a tkind*'a term*'a context -> typing_error
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
@@ -23,12 +23,7 @@ exception TypingError of typing_error
 
 let coc = ref false
 
-type 'a judgment0 = { ctx:'a; te:term; ty: term; }
-
-let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
-
-(* revseq n k = [n;n-1;..;k+1;k] *)
-let rec revseq n k = if n<k then [] else n::(revseq (n-1) k)
+type 'a judgment0 = { ctx:'a; te:typed term; ty:typed term; }
 
 (* **** PSEUDO UNIFICATION ********************** *)
 
@@ -41,18 +36,18 @@ let rec add_to_list q lst args1 args2 =
 module SS = Subst.S
 
 let unshift_reduce sg q t =
-  try Some (Subst.unshift q t)
+  try Some (Subst.unshift Typed q t)
   with Subst.UnshiftExn ->
-    ( try Some (Subst.unshift q (Reduction.snf sg t))
+    ( try Some (Subst.unshift Typed q (Reduction.snf Typed sg t))
       with Subst.UnshiftExn -> None )
 
-let pseudo_unification sg (q:int) (a:term) (b:term) : SS.t option =
-  let rec aux (sigma:SS.t) : (int*term*term) list -> SS.t option = function
+let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : SS.t option =
+  let rec aux (sigma:SS.t) : (int*typed term*typed term) list -> SS.t option = function
     | [] -> Some sigma
     | (q,t1,t2)::lst ->
         begin
-          let t1' = Reduction.whnf sg (SS.apply sigma t1 q) in
-          let t2' = Reduction.whnf sg (SS.apply sigma t2 q) in
+          let t1' = Reduction.whnf Typed sg (SS.apply sigma t1 q) in
+          let t2' = Reduction.whnf Typed sg (SS.apply sigma t2 q) in
             if term_eq t1' t2' then aux sigma lst
             else
               match t1', t2' with
@@ -80,12 +75,12 @@ let pseudo_unification sg (q:int) (a:term) (b:term) : SS.t option =
 
                 | App (DB (_,_,n),_,_), _
                 | _, App (DB (_,_,n),_,_) when ( n >= q ) ->
-                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
+                    if Reduction.are_convertible Typed sg t1' t2' then aux sigma lst
                     else None
 
                 | App (Const (l,md,id),_,_), _
                 | _, App (Const (l,md,id),_,_) when (not (Signature.is_constant sg l md id)) ->
-                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
+                    if Reduction.are_convertible Typed sg t1' t2' then aux sigma lst
                     else None
 
                 | App (f,a,args), App (f',a',args') ->
@@ -96,8 +91,8 @@ let pseudo_unification sg (q:int) (a:term) (b:term) : SS.t option =
                 | _, _ -> None
         end
   in
-  if term_eq a b then Some SS.identity
-  else aux SS.identity [(q,a,b)]
+  if term_eq Typed a b then Some (SS.identity Typed)
+  else aux (SS.identity Typed) [(q,a,b)]
 
 (* ********************** CONTEXT *)
 
@@ -106,26 +101,26 @@ sig
   type t
   val empty : t
   val add : loc -> ident -> t judgment0 -> t
-  val unsafe_add : t -> loc -> ident -> term -> t
-  val get_type : t -> loc -> ident -> int -> term
+  val unsafe_add : t -> loc -> ident -> typed term -> t
+  val get_type : t -> loc -> ident -> int -> typed term
   val is_empty : t -> bool
-  val to_context : t -> (loc*ident*term) list
-  val destruct : t -> ((loc*ident*term)*t) option
+  val to_context : t -> typed context
+  val destruct : t -> ((loc*ident*typed term)*t) option
 end =
 struct
-  type t = (loc*ident*term) list
+  type t = typed context
 
   let empty = []
   let is_empty ctx = ( ctx=[] )
   let to_context ctx = ctx
 
-  let add l x jdg : context =
+  let add l x jdg : typed context =
     match jdg.ty with
       | Type _ -> (l,x,jdg.te) :: jdg.ctx
       | Kind when !coc -> (l,x,jdg.te) :: jdg.ctx
       (*Note that this and RMeta are the only places where the coc flag has an effect *)
       | _ -> raise (TypingError (ConvertibilityError
-                                   (jdg.te, to_context jdg.ctx, mk_Type dloc, jdg.ty)))
+                                   (Typed, jdg.te, to_context jdg.ctx, mk_Type dloc, jdg.ty)))
 
   let unsafe_add ctx l x ty = (l,x,ty)::ctx
 
@@ -133,7 +128,7 @@ struct
     try
       let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty
     with Failure _ ->
-      raise (TypingError (VariableNotFound (l,x,n,ctx)))
+      raise (TypingError (VariableNotFound (Typed,l,x,n,ctx)))
 
   let destruct = function
     | [] -> None
@@ -147,42 +142,44 @@ type judgment = Context.t judgment0
 module type Meta = sig
   include Monads.Monad
 
+  type pextra
+  type extra
   type ctx
   type jdg
 
-  val get_type : ctx -> loc -> ident -> int -> term
+  val get_type : ctx -> loc -> ident -> int -> extra term
 
-  val judge : ctx -> term -> term -> jdg
+  val judge : ctx -> extra term -> extra term -> jdg
   val jdg_ctx : jdg -> ctx
-  val jdg_te : jdg -> term
-  val jdg_ty : jdg -> term
+  val jdg_te : jdg -> extra term
+  val jdg_ty : jdg -> extra term
 
-  val to_context : ctx -> context
+  val to_context : ctx -> extra context
 
   val fail : typing_error -> 'a t
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
   val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
-  val unsafe_add : ctx -> loc -> ident -> term -> ctx
+  val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
-  (* We could almost expand this function to get rid of Meta.unsafe_add above, but it wouldn't work when checking patterns. *)
-  val pi : Signature.t -> ctx -> term -> (loc*ident*term*term) option t
+  val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
-  val unify : Signature.t -> ctx -> term -> term -> bool t
-  val unify_sort : Signature.t -> ctx -> term -> bool t
+  val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
+  val unify_sort : Signature.t -> ctx -> extra term -> bool t
 
-  val new_meta : ctx -> loc -> ident -> mkind -> term t
+  val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
+                    Signature.t -> ctx -> loc -> pextra -> jdg t
 
-  val meta_constraint : loc -> ident -> int -> (context * term) t
-
-  val simpl : term -> term t
+  val simpl : extra term -> extra term t
 end
 
-module KMeta : Meta with type 'a t = 'a and type ctx = Context.t and type jdg = judgment
+module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra = typed and type ctx = Context.t and type jdg = judgment
  = struct
   type 'a t = 'a
   
+  type pextra = typed
+  type extra = typed
   type ctx = Context.t
   type jdg = judgment
   
@@ -206,19 +203,17 @@ module KMeta : Meta with type 'a t = 'a and type ctx = Context.t and type jdg = 
   let ctx_add _ = Context.add
   let unsafe_add = Context.unsafe_add
   
-  let unify sg ctx t u = Reduction.are_convertible sg t u
+  let unify sg ctx t u = Reduction.are_convertible Typed sg t u
 
   let unify_sort sg ctx = function
     | Kind | Type _ -> true
     | _ -> false
 
-  let pi sg ctx t = match Reduction.whnf sg t with
+  let pi sg ctx t = match Reduction.whnf Typed sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
     | _ -> None
     
-  let new_meta ctx l s _ = fail (MetaInKernel (l,s))
-  
-  let meta_constraint lc s _ = fail (MetaInKernel (lc,s))
+  let infer_extra infer check sg ctx lc ex = ex.exfalso
 
   let simpl x = x
 end
@@ -227,18 +222,22 @@ end
 (* ********************** TYPE CHECKING/INFERENCE  *)
 module type ElaborationS = sig
   type 'a t
+
+  type pextra
   type ctx
   type jdg
 
-  val infer       : Signature.t -> ctx -> term -> jdg t
+  val infer       : Signature.t -> ctx -> pextra term -> jdg t
 
-  val check       : Signature.t -> term -> jdg -> jdg t
+  val check       : Signature.t -> pextra term -> jdg -> jdg t
 
-  val infer_pattern : Signature.t -> ctx -> int -> Subst.S.t -> pattern -> (term*Subst.S.t) t
+  val infer_pattern : Signature.t -> ctx -> int -> extra Subst.S.t -> pattern -> (extra term*extra Subst.S.t) t
 end
 
 module Elaboration (M:Meta) = struct
   type 'a t = 'a M.t
+  type pextra = M.pextra
+  type extra = M.extra
   type ctx = M.ctx
   type jdg = M.jdg
 
@@ -246,7 +245,7 @@ module Elaboration (M:Meta) = struct
   
   (* ********************** TERMS *)
 
-  let rec infer sg (ctx:ctx) : term -> jdg t = function
+  let rec infer sg (ctx:ctx) : pextra term -> jdg t = function
     | Kind -> fail (KindIsNotTypable)
     | Type l -> M.return (judge ctx (mk_Type l) mk_Kind)
     | DB (l,x,n) -> M.return (judge ctx (mk_DB l x n) (M.get_type ctx l x n))

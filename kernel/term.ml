@@ -2,22 +2,21 @@ open Basics
 
 (** {2 Terms/Patterns} *)
 
-type term =
-  | Kind                                (* Kind *)
-  | Type  of loc                        (* Type *)
-  | DB    of loc*ident*int              (* deBruijn *)
-  | Const of loc*ident*ident            (* Global variable *)
-  | App   of term * term * term list    (* f a1 [ a2 ; ... an ] , f not an App *)
-  | Lam   of loc*ident*term option*term (* Lambda abstraction *)
-  | Pi    of loc*ident*term*term        (* Pi abstraction *)
-  | Hole  of loc*ident                  (* Raw placeholder *)
-  | Meta  of loc*ident*int*(ident*term) list    (* Metavariable *)
+type 'a term =
+  | Kind                                      (* Kind *)
+  | Type  of loc                              (* Type *)
+  | DB    of loc*ident*int                    (* deBruijn *)
+  | Const of loc*ident*ident                  (* Global variable *)
+  | App   of 'a term * 'a term * 'a term list (* f a1 [ a2 ; ... an ] , f not an App *)
+  | Lam   of loc*ident*'a term option*'a term (* Lambda abstraction *)
+  | Pi    of loc*ident*'a term*'a term        (* Pi abstraction *)
+  | Extra of loc*'a
 
 
-type context = ( loc * ident * term ) list
+type 'a context = ( loc * ident * 'a term ) list
 
 let rec get_loc = function
-  | Type l | DB (l,_,_) | Const (l,_,_) | Lam (l,_,_,_) | Pi (l,_,_,_) | Hole (l,_) | Meta (l,_,_,_) -> l
+  | Type l | DB (l,_,_) | Const (l,_,_) | Lam (l,_,_,_) | Pi (l,_,_,_) | Extra (l,_) -> l
   | Kind -> dloc
   | App (f,_,_) -> get_loc f
 
@@ -28,55 +27,73 @@ let mk_Const l m v      = Const (l,m,v)
 let mk_Lam l x a b      = Lam (l,x,a,b)
 let mk_Pi l x a b       = Pi (l,x,a,b)
 let mk_Arrow l a b      = Pi (l,qmark,a,b)
-let mk_Hole l v         = Hole (l,v)
-let mk_Meta l v n t     = Meta (l,v,n,t)
+let mk_Extra l ex       = Extra (l,ex)
 
 let mk_App f a1 args =
   match f with
     | App (f',a1',args') -> App (f',a1',args'@(a1::args))
     | _ -> App(f,a1,args)
 
-let rec term_eq t1 t2 =
+type untyped = { hole : ident }
+type pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
+type typed = { exfalso : 'r. 'r }
+
+type 'a tkind =
+  | Untyped : untyped tkind
+  | Pretyped : pretyped tkind
+  | Typed : typed tkind
+
+let rec term_eq (type a) (k:a tkind) (t1:a term) (t2:a term) =
   (* t1 == t2 || *)
   match t1, t2 with
-    | Kind, Kind | Type _, Type _ | Hole _, Hole _ -> true
+    | Kind, Kind | Type _, Type _ -> true
     | DB (_,_,n), DB (_,_,n') -> n==n'
     | Const (_,m,v), Const (_,m',v') -> ident_eq v v' && ident_eq m m'
     | App (f,a,l), App (f',a',l') ->
-        ( try List.for_all2 term_eq (f::a::l) (f'::a'::l')
+        ( try List.for_all2 (term_eq k) (f::a::l) (f'::a'::l')
           with _ -> false )
-    | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq b b'
-    | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
-    | Meta (_,_,n,ts), Meta (_,_,n',ts') -> n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
-                                                     with | Invalid_argument _ -> false)
+    | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq k b b'
+    | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq k a a' && term_eq k b b'
+    | Extra (_,ex), Extra (_,ex') -> begin match k with
+        | Untyped -> true
+        | Pretyped -> let { meta=(_,n,ts) } = ex and { meta=(_,n',ts') } = ex' in
+            n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
+                     with | Invalid_argument _ -> false)
+        | Typed -> ex.exfalso
+        end
     | _, _  -> false
 
-let rec pp_term out = function
+let rec pp_term (type a) (k:a tkind) out : a term -> unit = function
   | Kind               -> output_string out "Kind"
   | Type _             -> output_string out "Type"
   | DB  (_,x,n)        -> Printf.fprintf out "%a[%i]" pp_ident x n
   | Const (_,m,v)      -> Printf.fprintf out "%a.%a" pp_ident m pp_ident v
-  | App (f,a,args)     -> pp_list " " pp_term_wp out (f::a::args)
-  | Lam (_,x,None,f)   -> Printf.fprintf out "%a => %a" pp_ident x pp_term f
-  | Lam (_,x,Some a,f) -> Printf.fprintf out "%a:%a => %a" pp_ident x pp_term_wp a pp_term f
-  | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x pp_term_wp a pp_term b
-  | Hole (_,s) when ident_eq s empty -> Printf.fprintf out "?"
-  | Hole (_,s)         -> Printf.fprintf out "?{\"%a\"}" pp_ident s
-  | Meta (_,s,n,ts) when ident_eq s empty -> Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
-  | Meta (_,s,n,ts)    -> Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+  | App (f,a,args)     -> pp_list " " (pp_term_wp k) out (f::a::args)
+  | Lam (_,x,None,f)   -> Printf.fprintf out "%a => %a" pp_ident x (pp_term k) f
+  | Lam (_,x,Some a,f) -> Printf.fprintf out "%a:%a => %a" pp_ident x (pp_term_wp k) a (pp_term k) f
+  | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x (pp_term_wp k) a (pp_term k) b
+  | Extra (_,ex) -> begin match k with
+      | Untyped -> let { hole=s } = ex in
+          if ident_eq s empty then Printf.fprintf out "?"
+          else Printf.fprintf out "?{\"%a\"}" pp_ident s
+      | Pretyped -> let { meta=(s,n,ts) } = ex in if ident_eq s empty
+          then Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
+          else Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
+      | Typed -> ex.exfalso
+      end
 
-and pp_term_wp out = function
-  | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> pp_term out t
-  | t                                  -> Printf.fprintf out "(%a)" pp_term t
+and pp_term_wp k out = function
+  | Kind | Type _ | DB _ | Const _ | Extra _ as t -> pp_term k out t
+  | t                                  -> Printf.fprintf out "(%a)" (pp_term k) t
 
-let pp_context out ctx =
+let pp_context k out ctx =
   pp_list ", " (fun out (_,x,ty) ->
-                   Printf.fprintf out "%a: %a" pp_ident x pp_term ty )
+                   Printf.fprintf out "%a: %a" pp_ident x (pp_term k) ty )
     out (List.rev ctx)
 
 
 type mkind =
-  | MTyped of term
+  | MTyped of pretyped term
   | MType
   | MSort
 

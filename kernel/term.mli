@@ -4,45 +4,53 @@ open Basics
 
 (** {2 Terms} *)
 
-type term = private
-  | Kind                                (** Kind *)
-  | Type  of loc                        (** Type *)
-  | DB    of loc*ident*int              (** deBruijn indices *)
-  | Const of loc*ident*ident            (** Global variable *)
-  | App   of term * term * term list    (** f a1 [ a2 ; ... an ] , f not an App *)
-  | Lam   of loc*ident*term option*term (** Lambda abstraction *)
-  | Pi    of loc*ident*term*term        (** Pi abstraction *)
-  | Hole  of loc*ident                  (** Raw placeholder *)
-  | Meta  of loc*ident*int*(ident*term) list    (** Metavariable *)
-(** The list attached to metavariables is in increasing DeBruijn order *)
+type 'a term = private
+  | Kind                                      (** Kind *)
+  | Type  of loc                              (** Type *)
+  | DB    of loc*ident*int                    (** deBruijn indices *)
+  | Const of loc*ident*ident                  (** Global variable *)
+  | App   of 'a term * 'a term * 'a term list (** f a1 [ a2 ; ... an ] , f not an App *)
+  | Lam   of loc*ident*'a term option*'a term (** Lambda abstraction *)
+  | Pi    of loc*ident*'a term*'a term        (** Pi abstraction *)
+  | Extra of loc*'a
 
-val get_loc : term -> loc
+val get_loc : 'a term -> loc
 
-val mk_Kind     : term
-val mk_Type     : loc -> term
-val mk_DB       : loc -> ident -> int -> term
-val mk_Const    : loc -> ident -> ident -> term
-val mk_Lam      : loc -> ident -> term option -> term -> term
-val mk_App      : term -> term -> term list -> term
-val mk_Pi       : loc -> ident -> term -> term -> term
-val mk_Arrow    : loc -> term -> term -> term
-val mk_Hole     : loc -> ident -> term
-val mk_Meta     : loc -> ident -> int -> (ident*term) list -> term
+val mk_Kind     : 'a term
+val mk_Type     : loc -> 'a term
+val mk_DB       : loc -> ident -> int -> 'a term
+val mk_Const    : loc -> ident -> ident -> 'a term
+val mk_Lam      : loc -> ident -> 'a term option -> 'a term -> 'a term
+val mk_App      : 'a term -> 'a term -> 'a term list -> 'a term
+val mk_Pi       : loc -> ident -> 'a term -> 'a term -> 'a term
+val mk_Arrow    : loc -> 'a term -> 'a term -> 'a term
+val mk_Extra    : loc -> 'a -> 'a term
+
+(** Kinds of terms *)
+
+type untyped = { hole : ident }
+type pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
+type typed = { exfalso : 'r. 'r }
+
+type 'a tkind =
+  | Untyped : untyped tkind
+  | Pretyped : pretyped tkind
+  | Typed : typed tkind
 
 (* Syntactic equality / Alpha-equivalence *)
-val term_eq : term -> term -> bool
+val term_eq : 'a tkind -> 'a term -> 'a term -> bool
 
-val pp_term     : out_channel -> term -> unit
+val pp_term     : 'a tkind -> out_channel -> 'a term -> unit
 
 (** {2 Contexts} *)
 
-type context = ( loc * ident * term ) list
-val pp_context  : out_channel -> context -> unit
+type 'a context = ( loc * ident * 'a term ) list
+val pp_context  : 'a tkind -> out_channel -> 'a context -> unit
 
 (** {3 Unification candidates} *)
 
 type mkind =
-  | MTyped of term
+  | MTyped of pretyped term
   | MType
   | MSort
 

@@ -38,6 +38,9 @@ type untyped = { hole : ident }
 type pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
 type typed = { exfalso : 'r. 'r }
 
+let mk_Hole lc s = Extra (lc,{ hole=s; })
+let mk_Meta lc s n ts = Extra (lc, { meta=(s,n,ts) })
+
 type 'a tkind =
   | Untyped : untyped tkind
   | Pretyped : pretyped tkind

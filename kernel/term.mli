@@ -32,6 +32,9 @@ type untyped = { hole : ident }
 type pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
 type typed = { exfalso : 'r. 'r }
 
+val mk_Hole     : loc -> ident -> untyped term
+val mk_Meta     : loc -> ident -> int -> (ident*pretyped term) list -> pretyped term
+
 type 'a tkind =
   | Untyped : untyped tkind
   | Pretyped : pretyped tkind

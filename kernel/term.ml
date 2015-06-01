@@ -74,18 +74,14 @@ let rec term_eq (t1:'a term) (t2:'a term) : bool =
           with _ -> false )
     | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq b b'
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
-    | Extra (_,kind,ex), Extra (_,_,ex') -> eq_handler term_eq kind ex ex'
+    | Extra (_,kind,ex), Extra (_,_,ex') -> (fun (type a) (term_eq : a term -> a term -> bool) (kind:a tkind) (ex:a) (ex':a) -> match kind with
+        | Pretyped -> let { meta=(_,n,ts) } = ex and { meta=(_,n',ts') } = ex' in
+                n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
+                         with | Invalid_argument _ -> false)
+        | Untyped -> true
+        | Typed -> true
+        ) term_eq kind ex ex'
     | _, _  -> false
-
-let pp_handler (type a) (pp_term : out_channel -> a term -> unit) (kind: a tkind) (out:out_channel) : a -> unit =
-  match kind with
-      | Untyped -> fun ex -> let { hole=s } = ex in
-          if ident_eq s empty then Printf.fprintf out "?"
-          else Printf.fprintf out "?{\"%a\"}" pp_ident s
-      | Pretyped -> fun ex -> let { meta=(s,n,ts) } = ex in if ident_eq s empty
-          then Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
-          else Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
-      | Typed -> fun ex -> ex.exfalso
 
 let rec pp_term out : 'a term -> unit = function
   | Kind               -> output_string out "Kind"
@@ -96,7 +92,15 @@ let rec pp_term out : 'a term -> unit = function
   | Lam (_,x,None,f)   -> Printf.fprintf out "%a => %a" pp_ident x pp_term f
   | Lam (_,x,Some a,f) -> Printf.fprintf out "%a:%a => %a" pp_ident x pp_term_wp a pp_term f
   | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x pp_term_wp a pp_term b
-  | Extra (_,kind,ex) -> pp_handler pp_term kind out ex
+  | Extra (_,kind,ex)  -> (fun (type a) (pp_term : out_channel -> a term -> unit) (kind:a tkind) (ex:a) -> match kind with
+      | Untyped -> let { hole=s } = ex in
+          if ident_eq s empty then Printf.fprintf out "?"
+          else Printf.fprintf out "?{\"%a\"}" pp_ident s
+      | Pretyped -> let { meta=(s,n,ts) } = ex in if ident_eq s empty
+          then Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+          else Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+      | Typed -> ex.exfalso
+      ) pp_term kind ex
 
 and pp_term_wp out = function
   | Kind | Type _ | DB _ | Const _ | Extra _ as t -> pp_term out t

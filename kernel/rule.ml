@@ -74,7 +74,7 @@ open Printf
 let rec pp_pattern out = function
   | Var (_,x,n,[]) -> fprintf out "%a[%i]" pp_ident x n
   | Var (_,x,n,lst) -> fprintf out "%a[%i] %a" pp_ident x n (pp_list " " pp_pattern_wp) lst
-  | Brackets t -> fprintf out "{ %a }" (pp_term Typed) t
+  | Brackets t -> fprintf out "{ %a }" pp_term t
   | Pattern (_,m,v,[]) -> fprintf out "%a.%a" pp_ident m pp_ident v
   | Pattern (_,m,v,pats) -> fprintf out "%a.%a %a" pp_ident m pp_ident v (pp_list " " pp_pattern_wp) pats
   | Lambda (_,x,p) -> fprintf out "%a => %a" pp_ident x pp_pattern p
@@ -84,9 +84,9 @@ and pp_pattern_wp out = function
 
 let pp_rule out (ctx,pat,te) =
   fprintf out "[%a] %a --> %a"
-    (pp_context Typed) ctx
+    pp_context ctx
     pp_pattern pat
-    (pp_term Typed) te
+    pp_term te
 
 let pp_frule out r = pp_rule out (r.ctx,Pattern(r.l,r.md,r.id,r.args),r.rhs)
 
@@ -97,16 +97,16 @@ let pp_pc out = function
   | MillerPattern _ -> fprintf out "Mi"
 
 let rec pp_dtree t out = function
-  | Test (pc,[],te,None)   -> fprintf out "(%a) %a" pp_pc pc (pp_term Typed) te
+  | Test (pc,[],te,None)   -> fprintf out "(%a) %a" pp_pc pc pp_term te
   | Test (_,[],_,def)      -> assert false
   | Test (pc,lst,te,def)  ->
       let tab = tab t in
       let aux out = function
-        | Linearity (i,j) -> fprintf out "%a =l %a" (pp_term Typed) i (pp_term Typed) j
-        | Bracket (i,j) -> fprintf out "%a =b %a" (pp_term Typed) i (pp_term Typed) j
+        | Linearity (i,j) -> fprintf out "%a =l %a" pp_term i pp_term j
+        | Bracket (i,j) -> fprintf out "%a =b %a" pp_term i pp_term j
       in
       fprintf out "\n%sif %a then (%a) %a\n%selse (%a) %a" tab (pp_list " and " aux) lst
-        pp_pc pc (pp_term Typed) te tab pp_pc pc (pp_def (t+1)) def
+        pp_pc pc pp_term te tab pp_pc pc (pp_def (t+1)) def
   | Switch (i,cases,def)->
       let tab = tab t in
       let pp_case out = function

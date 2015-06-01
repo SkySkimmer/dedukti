@@ -45,12 +45,21 @@ type 'a tkind =
 
 let rec generalize_typed = function
   | Kind | Type _ | DB _ | Const _ as t -> t
+  | App (f,a,args) -> App (generalize_typed f, generalize_typed a, List.map generalize_typed args)
   | Lam (lc,x,Some a,b) -> Lam (lc,x,Some (generalize_typed a),generalize_typed b)
   | Lam (lc,x,None,b) -> Lam (lc,x,None,generalize_typed b)
   | Pi (lc,x,a,b) -> Pi (lc,x,generalize_typed a,generalize_typed b)
   | Extra (_,ex) -> ex.exfalso
 
-let rec term_eq (type a) (k:a tkind) (t1:a term) (t2:a term) =
+let eq_handler (type a) (term_eq : a tkind -> a term -> a term -> bool)  (kind: a tkind) : a -> a -> bool =
+  match kind with
+    | Pretyped -> fun (ex:a) (ex':a) -> let { meta=(_,n,ts) } = ex and { meta=(_,n',ts') } = ex' in
+            n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq Pretyped t1 t2) ts ts'
+                     with | Invalid_argument _ -> false)
+    | Untyped -> fun _ _ -> true
+    | Typed -> fun _ _ -> true
+
+let rec term_eq (k:'a tkind) (t1:'a term) (t2:'a term) : bool =
   (* t1 == t2 || *)
   match t1, t2 with
     | Kind, Kind | Type _, Type _ -> true
@@ -61,16 +70,20 @@ let rec term_eq (type a) (k:a tkind) (t1:a term) (t2:a term) =
           with _ -> false )
     | Lam (_,_,a,b), Lam (_,_,a',b') -> term_eq k b b'
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq k a a' && term_eq k b b'
-    | Extra (_,ex), Extra (_,ex') -> begin match k with
-        | Untyped -> true
-        | Pretyped -> let { meta=(_,n,ts) } = ex and { meta=(_,n',ts') } = ex' in
-            n=n' && (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
-                     with | Invalid_argument _ -> false)
-        | Typed -> ex.exfalso
-        end
+    | Extra (_,ex), Extra (_,ex') -> eq_handler term_eq k ex ex'
     | _, _  -> false
 
-let rec pp_term (type a) (k:a tkind) out : a term -> unit = function
+let pp_handler (type a) (pp_term : a tkind -> out_channel -> a term -> unit) (kind: a tkind) (out:out_channel) : a -> unit =
+  match kind with
+      | Untyped -> fun ex -> let { hole=s } = ex in
+          if ident_eq s empty then Printf.fprintf out "?"
+          else Printf.fprintf out "?{\"%a\"}" pp_ident s
+      | Pretyped -> fun ex -> let { meta=(s,n,ts) } = ex in if ident_eq s empty
+          then Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
+          else Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
+      | Typed -> fun ex -> ex.exfalso
+
+let rec pp_term (k:'a tkind) out : 'a term -> unit = function
   | Kind               -> output_string out "Kind"
   | Type _             -> output_string out "Type"
   | DB  (_,x,n)        -> Printf.fprintf out "%a[%i]" pp_ident x n
@@ -79,15 +92,7 @@ let rec pp_term (type a) (k:a tkind) out : a term -> unit = function
   | Lam (_,x,None,f)   -> Printf.fprintf out "%a => %a" pp_ident x (pp_term k) f
   | Lam (_,x,Some a,f) -> Printf.fprintf out "%a:%a => %a" pp_ident x (pp_term_wp k) a (pp_term k) f
   | Pi  (_,x,a,b)      -> Printf.fprintf out "%a:%a -> %a" pp_ident x (pp_term_wp k) a (pp_term k) b
-  | Extra (_,ex) -> begin match k with
-      | Untyped -> let { hole=s } = ex in
-          if ident_eq s empty then Printf.fprintf out "?"
-          else Printf.fprintf out "?{\"%a\"}" pp_ident s
-      | Pretyped -> let { meta=(s,n,ts) } = ex in if ident_eq s empty
-          then Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
-          else Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x (pp_term Pretyped) t)) ts
-      | Typed -> ex.exfalso
-      end
+  | Extra (_,ex) -> pp_handler pp_term k out ex
 
 and pp_term_wp k out = function
   | Kind | Type _ | DB _ | Const _ | Extra _ as t -> pp_term k out t

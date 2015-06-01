@@ -4,7 +4,7 @@ open Rule
 
 type dtree_error =
   | BoundVariableExpected of pattern
-  | VariableBoundOutsideTheGuard of term
+  | VariableBoundOutsideTheGuard of typed term
   | NotEnoughArguments of loc*ident*int*int*int
   | HeadSymbolMismatch of loc*ident*ident
   | ArityMismatch of loc*ident
@@ -15,7 +15,7 @@ type dtree_error =
 exception DtreeExn of dtree_error
 
 type rule2 =
-    { loc:loc ; pats:pattern2 array ; right:term ;
+    { loc:loc ; pats:pattern2 array ; right:typed term ;
       constraints:constr list ; esize:int ; }
 
 (* ************************************************************************** *)
@@ -68,7 +68,7 @@ let linearize (esize:int) (lst:pattern list) : int * pattern2 list * constr list
         try
           ( Var2(br,s.fvar+k,[]),
             { s with fvar=(s.fvar+1);
-                     cstr=(Bracket (mk_DB dloc br s.fvar,Subst.unshift k t))::(s.cstr) ;} )
+                     cstr=(Bracket (mk_DB dloc br s.fvar,Subst.unshift Typed k t))::(s.cstr) ;} )
         with
         | Subst.UnshiftExn -> raise (DtreeExn (VariableBoundOutsideTheGuard t))
       end
@@ -96,7 +96,7 @@ let get_nb_args (esize:int) (p:pattern) : int array =
     ( aux 0 p ; arr )
 
 (* Checks that the variables are applied to enough arguments *)
-let check_nb_args (nb_args:int array) (te:term) : unit =
+let check_nb_args (nb_args:int array) (te:typed term) : unit =
   let rec aux k = function
     | Kind | Type _ | Const _ -> ()
     | DB (l,id,n) ->
@@ -111,7 +111,7 @@ let check_nb_args (nb_args:int array) (te:term) : unit =
     | App (f,a1,args) -> List.iter (aux k) (f::a1::args)
     | Lam (_,_,None,b) -> aux (k+1) b
     | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> (aux k a;  aux (k+1) b)
-    | Meta _ | Hole _ -> assert false
+    | Extra (_,ex) -> ex.exfalso
   in
     aux 0 te
 

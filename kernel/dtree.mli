@@ -1,9 +1,10 @@
 open Basics
+open Term
 open Rule
 
 type dtree_error =
   | BoundVariableExpected of pattern
-  | VariableBoundOutsideTheGuard of Term.term
+  | VariableBoundOutsideTheGuard of typed term
   | NotEnoughArguments of loc*ident*int*int*int
   | HeadSymbolMismatch of loc*ident*ident
   | ArityMismatch of loc*ident

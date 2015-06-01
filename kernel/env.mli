@@ -17,7 +17,7 @@ val init        : ident -> unit
 val get_name    : unit -> ident
 (** [get_name ()] returns the name of environment/module *)
 
-val get_type    : loc -> ident -> ident -> (term,signature_error) error
+val get_type    : loc -> ident -> ident -> (typed term,signature_error) error
 (** [get_type l md id] returns the type of the constant [md.id]. *)
 
 val get_dtree   : loc -> ident -> ident -> ((int*Rule.dtree) option,signature_error) error
@@ -26,16 +26,16 @@ val get_dtree   : loc -> ident -> ident -> ((int*Rule.dtree) option,signature_er
 val export      : unit -> bool
 (** [export ()] saves the current environment in a [*.dko] file*)
 
-val declare_constant : loc -> ident -> term -> (unit,env_error) error
+val declare_constant : loc -> ident -> untyped term -> (unit,env_error) error
 (** [declare_constant l id ty] declares the constant symbol [id] of type [ty]. *)
 
-val declare_definable : loc -> ident -> term -> (unit,env_error) error
+val declare_definable : loc -> ident -> untyped term -> (unit,env_error) error
 (** [declare_definable l id ty] declares the definable symbol [id] of type [ty]. *)
 
-val define      : loc -> ident -> term -> term option -> (unit,env_error) error
+val define      : loc -> ident -> untyped term -> untyped term option -> (unit,env_error) error
 (** [define l id body ty] defined the symbol [id] of type [ty] to be an alias of [body]. *)
 
-val define_op   : loc -> ident -> term -> term option -> (unit,env_error) error
+val define_op   : loc -> ident -> untyped term -> untyped term option -> (unit,env_error) error
 (** [define_op l id body ty] declares the symbol [id] of type [ty] and checks
 * that [body] has this type (but forget it after). *)
 
@@ -45,18 +45,18 @@ val add_rules   : Rule.rule list -> (unit,env_error) error
 
 (** {2 Type checking/inference} *)
 
-val infer       : term -> (term,env_error) error
+val infer       : untyped term -> (typed term,env_error) error
 
-val check       : term -> term -> (unit,env_error) error
+val check       : untyped term -> untyped term -> (unit,env_error) error
 
 (** {2 Safe Reduction/Conversion} *)
 (** terms are typechecked before the reduction/conversion *)
 
-val hnf         : term -> (term,env_error) error
-val whnf        : term -> (term,env_error) error
-val snf         : term -> (term,env_error) error
-val one         : term -> (term option,env_error) error
+val hnf         : untyped term -> (typed term,env_error) error
+val whnf        : untyped term -> (typed term,env_error) error
+val snf         : untyped term -> (typed term,env_error) error
+val one         : untyped term -> (typed term option,env_error) error
 
-val are_convertible : term -> term -> (bool,env_error) error
+val are_convertible : untyped term -> untyped term -> (bool,env_error) error
 
-val unsafe_snf : term -> term
+val unsafe_snf : untyped term -> untyped term

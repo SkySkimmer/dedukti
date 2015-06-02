@@ -38,7 +38,7 @@ val mk_Extra    : loc -> 'a tkind -> 'a -> 'a term
 val mk_Hole     : loc -> ident -> untyped term
 val mk_Meta     : loc -> ident -> int -> (ident*pretyped term) list -> pretyped term
 
-val generalize_typed : typed term -> 'a term
+val lift_term : typed term -> 'a term
 
 (* Syntactic equality / Alpha-equivalence *)
 val term_eq : 'a term -> 'a term -> bool

@@ -1,4 +1,4 @@
 open Term
 
 exception NotUnifiable
-val resolve : int Basics.LList.t -> typed term -> typed term
+val resolve : int Basics.LList.t -> 'a term -> 'a term

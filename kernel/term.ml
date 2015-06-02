@@ -47,12 +47,12 @@ let mk_App f a1 args =
     | _ -> App(f,a1,args)
 
 
-let rec generalize_typed = function
+let rec lift_term = function
   | Kind | Type _ | DB _ | Const _ as t -> t
-  | App (f,a,args) -> App (generalize_typed f, generalize_typed a, List.map generalize_typed args)
-  | Lam (lc,x,Some a,b) -> Lam (lc,x,Some (generalize_typed a),generalize_typed b)
-  | Lam (lc,x,None,b) -> Lam (lc,x,None,generalize_typed b)
-  | Pi (lc,x,a,b) -> Pi (lc,x,generalize_typed a,generalize_typed b)
+  | App (f,a,args) -> App (lift_term f, lift_term a, List.map lift_term args)
+  | Lam (lc,x,Some a,b) -> Lam (lc,x,Some (lift_term a),lift_term b)
+  | Lam (lc,x,None,b) -> Lam (lc,x,None,lift_term b)
+  | Pi (lc,x,a,b) -> Pi (lc,x,lift_term a,lift_term b)
   | Extra (_,Typed,ex) -> ex.exfalso
 
 let eq_handler (type a) (term_eq : a term -> a term -> bool)  (kind: a tkind) : a -> a -> bool =

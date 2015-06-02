@@ -4,18 +4,18 @@ open Typing
 
 type command =
   (* Reduction *)
-  | Whnf of term
-  | Hnf of term
-  | Snf of term
-  | OneStep of term
-  | Conv of term*term
+  | Whnf of untyped term
+  | Hnf of untyped term
+  | Snf of untyped term
+  | OneStep of untyped term
+  | Conv of untyped term*untyped term
   (*Typing*)
-  | Check of term*term
-  | Infer of term
+  | Check of untyped term*untyped term
+  | Infer of untyped term
   (* Misc *)
   | Gdt of ident option*ident
   | Print of string
-  | Other of string*term list
+  | Other of string*untyped term list
 
 let print s= print_string s; print_newline ()
 

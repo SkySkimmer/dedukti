@@ -12,7 +12,7 @@ let get_db_index ctx id =
     | _::lst -> aux (n+1) lst
   in aux 0 ctx
 
-let rec t_of_pt (ctx:ident list) (pte:preterm) : term =
+let rec t_of_pt (ctx:ident list) (pte:preterm) : untyped term =
   match pte with
     | PreType l    -> mk_Type l
     | PreId (l,id) ->
@@ -31,10 +31,20 @@ let rec t_of_pt (ctx:ident list) (pte:preterm) : term =
         mk_Lam l id (Some (t_of_pt ctx a)) (t_of_pt (id::ctx) b)
     | PreMeta (l,v) -> mk_Hole l v
 
-let scope_term (ctx:context) (pte:preterm) : term =
+let scope_term (ctx:untyped context) (pte:preterm) : untyped term =
   t_of_pt (List.map (fun (_,x,_) -> x) ctx) pte
 
 (******************************************************************************)
+
+let rec force_ground : 'a term -> typed term = function
+  | Kind -> mk_Kind
+  | Type l -> mk_Type l
+  | DB (l,x,n) -> mk_DB l x n
+  | Const (l,m,v) -> mk_Const l m v
+  | App (f,a,args) -> mk_App (force_ground f) (force_ground a) (List.map force_ground args)
+  | Lam (l,x,a,b) -> mk_Lam l x (map_opt force_ground a) (force_ground b)
+  | Pi (l,x,a,b) -> mk_Pi l x (force_ground a) (force_ground b)
+  | Extra (l,_,_) -> Errors.fail l "Hole in pattern"
 
 let p_of_pp (ctx:ident list) : prepattern -> pattern =
   let rec aux k ctx = function
@@ -46,11 +56,11 @@ let p_of_pp (ctx:ident list) : prepattern -> pattern =
         )
     | PPattern (l,Some md,id,args) -> Pattern (l,md,id,List.map (aux k ctx) args)
     | PLambda (l,x,p) -> Lambda (l,x,aux (k+1) (x::ctx) p)
-    | PCondition pte -> Brackets (t_of_pt ctx pte)
+    | PCondition pte -> Brackets (force_ground (t_of_pt ctx pte))
     | PJoker l -> Errors.fail l "Unimplemented feature '_'."
   in aux 0 ctx
 
-let scope_pattern (ctx:context) (pp:prepattern) : pattern =
+let scope_pattern (ctx:untyped context) (pp:prepattern) : pattern =
   p_of_pp (List.map (fun (_,x,_) -> x) ctx) pp
 
 (******************************************************************************)
@@ -63,4 +73,4 @@ let scope_rule (l,pctx,id,pargs,pri) =
   let ctx = scope_context pctx in
   let pat = scope_pattern ctx (PPattern(l,None,id,pargs)) in
   let ri = scope_term ctx pri in
-    (ctx,pat,ri)
+    (List.map (fun (l,x,t) -> l,x,force_ground t) ctx,pat,force_ground ri)

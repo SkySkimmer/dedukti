@@ -70,6 +70,7 @@ let pp_state = get >>= fun pb -> effectful (fun () ->
   )
 
 let apply pb t = S.apply pb.sigma t
+let ground pb t = S.to_ground pb.sigma t
 
 let add_pair sg p = (*effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->*)
   modify (fun pb -> {pb with pairs=p::pb.pairs})

@@ -22,6 +22,7 @@ val pp_state : unit t
 (* raises an exception if there are no successes *)
 val run : 'a t -> 'a*problem
 val apply : problem -> pterm -> pterm
+val ground : problem -> pterm -> typed term
 
 type pair = pcontext*pterm*pterm
 

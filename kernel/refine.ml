@@ -15,13 +15,15 @@ module RMeta : sig
   
   val extract : Signature.t -> 'a t -> 'a*problem
   
-  val apply : problem -> pretyped term -> typed term
+  val ground : problem -> pretyped term -> typed term
 end = struct
   include Unif_core
   include Unifier
 
-  type ctx = context
-  type jdg = context*term*term
+  type pextra = untyped
+  type extra = pretyped
+  type ctx = pretyped context
+  type jdg = pretyped context*pretyped term*pretyped term
   
   let get_type ctx l x n =
     try
@@ -67,9 +69,9 @@ end = struct
 
   let infer_extra infer check sg ctx lc kind ex = match kind with
     | Untyped -> let {hole=s} = ex in
-        M.new_meta ctx lc s MType >>= fun mk ->
-        M.new_meta ctx lc s (MTyped mk) >>= fun mj ->
-        M.return (judge ctx mj mk)
+        new_meta ctx lc s MType >>= fun mk ->
+        new_meta ctx lc s (MTyped mk) >>= fun mj ->
+        return (judge ctx mj mk)
 end
 
 module Refiner = Elaboration(RMeta)
@@ -77,11 +79,11 @@ open RMeta
 
 let inference sg (te:untyped term) : judgment =
   let (_,te,_),pb = extract sg (Refiner.infer sg [] te) in
-    Typing.inference sg (apply pb te)
+    Typing.inference sg (ground pb te)
 
 let checking sg (te:untyped term) (ty_exp:untyped term) : judgment =
   let (_,te,ty),pb = extract sg (Refiner.infer sg [] ty_exp >>= fun jdg_ty -> Refiner.check sg te jdg_ty) in
-  let ty_r = apply pb ty and te_r = apply pb te in
+  let ty_r = ground pb ty and te_r = ground pb te in
     Typing.checking sg te_r ty_r
 
 let check_rule sg (ctx,le,ri:rule) : unit =

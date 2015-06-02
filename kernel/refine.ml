@@ -8,13 +8,14 @@ open Typing
 module SS = Subst.S
 
 module RMeta : sig
-  include Meta with type ctx = context and type jdg = (context*term*term)
+  include Meta with type pextra = untyped and type extra = pretyped
+                and type ctx = pretyped context and type jdg = (pretyped context*pretyped term*pretyped term)
   
   type problem
   
   val extract : Signature.t -> 'a t -> 'a*problem
   
-  val apply : problem -> term -> term
+  val apply : problem -> pretyped term -> typed term
 end = struct
   include Unif_core
   include Unifier
@@ -63,21 +64,28 @@ end = struct
         | false -> zero Not_Unifiable
         end) (* This backtracking lets us forget newly introduced metavariables. *)
         (function | Not_Applicable | Not_Unifiable -> return None | e -> zero e)
+
+  let infer_extra infer check sg ctx lc kind ex = match kind with
+    | Untyped -> let {hole=s} = ex in
+        M.new_meta ctx lc s MType >>= fun mk ->
+        M.new_meta ctx lc s (MTyped mk) >>= fun mj ->
+        M.return (judge ctx mj mk)
 end
 
 module Refiner = Elaboration(RMeta)
 open RMeta
 
-let inference sg (te:term) : judgment =
+let inference sg (te:untyped term) : judgment =
   let (_,te,_),pb = extract sg (Refiner.infer sg [] te) in
     Typing.inference sg (apply pb te)
 
-let checking sg (te:term) (ty_exp:term) : judgment =
+let checking sg (te:untyped term) (ty_exp:untyped term) : judgment =
   let (_,te,ty),pb = extract sg (Refiner.infer sg [] ty_exp >>= fun jdg_ty -> Refiner.check sg te jdg_ty) in
   let ty_r = apply pb ty and te_r = apply pb te in
     Typing.checking sg te_r ty_r
 
 let check_rule sg (ctx,le,ri:rule) : unit =
+(*
   let ((ctx,ri),pb) = extract sg (
     fold (fun ctx (l,id,ty) -> Refiner.infer sg ctx ty >>= fun jty -> ctx_add sg l id jty) [] (List.rev ctx) >>=
     fun ctx -> Refiner.infer_pattern sg ctx 0 SS.identity le >>=
@@ -92,5 +100,6 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     ) in
   let ctx = List.map (fun (l,id,ty) -> l,id,apply pb ty) ctx in
   let ri = apply pb ri in
+  *)
     Typing.check_rule sg (ctx,le,ri)
 

@@ -68,7 +68,7 @@ let linearize (esize:int) (lst:pattern list) : int * pattern2 list * constr list
         try
           ( Var2(br,s.fvar+k,[]),
             { s with fvar=(s.fvar+1);
-                     cstr=(Bracket (mk_DB dloc br s.fvar,Subst.unshift Typed k t))::(s.cstr) ;} )
+                     cstr=(Bracket (mk_DB dloc br s.fvar,Subst.unshift k t))::(s.cstr) ;} )
         with
         | Subst.UnshiftExn -> raise (DtreeExn (VariableBoundOutsideTheGuard t))
       end
@@ -111,7 +111,7 @@ let check_nb_args (nb_args:int array) (te:typed term) : unit =
     | App (f,a1,args) -> List.iter (aux k) (f::a1::args)
     | Lam (_,_,None,b) -> aux (k+1) b
     | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> (aux k a;  aux (k+1) b)
-    | Extra (_,ex) -> ex.exfalso
+    | Extra (_,Typed,ex) -> ex.exfalso
   in
     aux 0 te
 

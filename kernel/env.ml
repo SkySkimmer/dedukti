@@ -108,21 +108,21 @@ let check te ty =
 
 let whnf te =
   try
-    let _ = Refine.inference !sg te in OK (Reduction.whnf !sg te)
+    let {te} = Refine.inference !sg te in OK (Reduction.whnf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let hnf te =
   try
-    let _ = Refine.inference !sg te in OK (Reduction.hnf !sg te)
+    let {te} = Refine.inference !sg te in OK (Reduction.hnf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let snf te =
   try
-    let _ = Refine.inference !sg te in OK (Reduction.snf !sg te)
+    let {te} = Refine.inference !sg te in OK (Reduction.snf !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
@@ -131,15 +131,15 @@ let unsafe_snf te = Reduction.snf !sg te
 
 let one te =
   try
-    let _ = Refine.inference !sg te in OK (Reduction.one_step !sg te)
+    let {te} = Refine.inference !sg te in OK (Reduction.one_step !sg te)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
 let are_convertible te1 te2 =
   try
-    let _ = Refine.inference !sg te1 in
-    let _ = Refine.inference !sg te2 in
+    let {te=te1} = Refine.inference !sg te1 in
+    let {te=te2} = Refine.inference !sg te2 in
       OK (Reduction.are_convertible !sg te1 te2)
   with
     | SignatureError e -> Err (EnvErrorSignature e)

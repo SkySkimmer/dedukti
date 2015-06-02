@@ -158,14 +158,14 @@ and rewrite (sg:Signature.t) (stack:'a stack) (g:dtree) : ('a env*'a term) optio
           begin
             match get_context_syn sg stack ord with
               | None -> bind_opt (rewrite sg stack) def
-              | Some ctx -> Some (ctx, right)
+              | Some ctx -> Some (ctx, lift_term right)
           end
       | Test (Syntactic ord, eqs, right, def) ->
           begin
             match get_context_syn sg stack ord with
               | None -> bind_opt (rewrite sg stack) def
               | Some ctx ->
-                  if test ctx eqs then Some (ctx, right)
+                  if test ctx eqs then Some (ctx, lift_term right)
                   else bind_opt (rewrite sg stack) def
           end
       | Test (MillerPattern lst, eqs, right, def) ->
@@ -173,7 +173,7 @@ and rewrite (sg:Signature.t) (stack:'a stack) (g:dtree) : ('a env*'a term) optio
               match get_context_mp sg stack lst with
                 | None -> bind_opt (rewrite sg stack) def
                 | Some ctx ->
-                      if test ctx eqs then Some (ctx, right)
+                      if test ctx eqs then Some (ctx, lift_term right)
                       else bind_opt (rewrite sg stack) def
           end
 

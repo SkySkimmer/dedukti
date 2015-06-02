@@ -12,7 +12,7 @@ val add : t -> int -> pretyped term -> t
 
 val apply : t -> pretyped term -> pretyped term
 
-val to_ground : t -> pretyped term -> typed term option
+val to_ground : t -> pretyped term -> typed term
 
 val meta_raw : t -> int -> pretyped term option
 

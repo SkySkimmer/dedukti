@@ -59,4 +59,4 @@ val one         : untyped term -> (typed term option,env_error) error
 
 val are_convertible : untyped term -> untyped term -> (bool,env_error) error
 
-val unsafe_snf : untyped term -> untyped term
+val unsafe_snf : 'a term -> 'a term

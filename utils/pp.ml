@@ -57,7 +57,7 @@ and print_ppattern_wp out = function
   | PPattern (_,_,_,_::_) as p  -> Format.fprintf out "(%a)" print_ppattern p
   | p                           -> print_ppattern out p
 
-let rec print_term out = function
+let rec print_term out  : 'a term -> unit = function
   | Kind               -> Format.pp_print_string out "Kind"
   | Type _             -> Format.pp_print_string out "Type"
   | DB  (_,x,n)        -> print_db out (x,n)
@@ -72,7 +72,7 @@ let rec print_term out = function
       Format.fprintf out "@[%a ->@ @[%a@]@]" print_term_wp a print_term b
   | Pi  (_,x,a,b)      ->
       Format.fprintf out "@[%a:%a ->@ @[%a@]@]" print_ident x print_term_wp a print_term b
-  | Extra (_,kind,ex) -> let f (type a) (kind:a tkind) (ex:a) = match kind with
+  | Extra (_,kind,ex) -> let f (type a) (print_term:_ -> a term -> unit) (kind:a tkind) (ex:a) = match kind with
       | Untyped -> let {hole=s} = ex in if ident_eq s empty
         then Format.pp_print_string out "?"
         else Format.fprintf out "?{\"%a\"}" print_ident s
@@ -80,10 +80,10 @@ let rec print_term out = function
         then Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
         else Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
       | Typed -> ex.exfalso
-      in f kind ex
+      in f print_term kind ex
 
 and print_term_wp out = function
-  | Kind | Type _ | DB _ | Const _ | Hole _ | Extra _ as t -> print_term out t
+  | Kind | Type _ | DB _ | Const _ | Extra _ as t -> print_term out t
   | t                                  -> Format.fprintf out "(%a)" print_term t
 
 let print_bv out (_,id,i) = print_db out (id,i)

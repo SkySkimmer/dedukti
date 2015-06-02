@@ -10,7 +10,7 @@ let permute (dbs:int LList.t) (te:typed term) : typed term =
     | q::lst -> if q=n then size-1-cpt else find n (cpt+1) lst
   in
   let rec aux k = function
-    | Type _ | Kind | Const _ | Hole _ as t -> t
+    | Type _ | Kind | Const _ as t -> t
     | DB (_,x,n) as t ->
         if n < k then t
         else
@@ -19,7 +19,7 @@ let permute (dbs:int LList.t) (te:typed term) : typed term =
     | Lam (l,x,a,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi  dloc x (aux k a) (aux (k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Extra (_,ex)  -> ex.exfalso
+    | Extra (_,Typed,ex)  -> ex.exfalso
   in aux 0 te
 
 

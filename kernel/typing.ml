@@ -5,11 +5,11 @@ open Monads
 
 type typing_error =
   | KindIsNotTypable
-  | ConvertibilityError : 'a tkind*'a term*'a context*'a term*'a term -> typing_error
-  | VariableNotFound : 'a tkind*loc*ident*int*'a context -> typing_error
-  | SortExpected : 'a tkind*'a term*'a context*'a term -> typing_error
-  | ProductExpected : 'a tkind*'a term*'a context*'a term -> typing_error
-  | InexpectedKind : 'a tkind*'a term*'a context -> typing_error
+  | ConvertibilityError : 'a term*'b context*'c term*'d term -> typing_error
+  | VariableNotFound : loc*ident*int*'a context -> typing_error
+  | SortExpected : 'a term*'b context*'c term -> typing_error
+  | ProductExpected : 'a term*'b context*'c term -> typing_error
+  | InexpectedKind : 'a term*'b context -> typing_error
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
@@ -36,18 +36,18 @@ let rec add_to_list q lst args1 args2 =
 module SS = Subst.S
 
 let unshift_reduce sg q t =
-  try Some (Subst.unshift Typed q t)
+  try Some (Subst.unshift q t)
   with Subst.UnshiftExn ->
-    ( try Some (Subst.unshift Typed q (Reduction.snf Typed sg t))
+    ( try Some (Subst.unshift q (Reduction.snf sg t))
       with Subst.UnshiftExn -> None )
 
-let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : SS.t option =
-  let rec aux (sigma:SS.t) : (int*typed term*typed term) list -> SS.t option = function
+let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : typed SS.t option =
+  let rec aux (sigma:typed SS.t) : (int*typed term*typed term) list -> typed SS.t option = function
     | [] -> Some sigma
     | (q,t1,t2)::lst ->
         begin
-          let t1' = Reduction.whnf Typed sg (SS.apply sigma t1 q) in
-          let t2' = Reduction.whnf Typed sg (SS.apply sigma t2 q) in
+          let t1' = Reduction.whnf sg (SS.apply sigma t1 q) in
+          let t2' = Reduction.whnf sg (SS.apply sigma t2 q) in
             if term_eq t1' t2' then aux sigma lst
             else
               match t1', t2' with
@@ -75,12 +75,12 @@ let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : SS.t option =
 
                 | App (DB (_,_,n),_,_), _
                 | _, App (DB (_,_,n),_,_) when ( n >= q ) ->
-                    if Reduction.are_convertible Typed sg t1' t2' then aux sigma lst
+                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
                     else None
 
                 | App (Const (l,md,id),_,_), _
                 | _, App (Const (l,md,id),_,_) when (not (Signature.is_constant sg l md id)) ->
-                    if Reduction.are_convertible Typed sg t1' t2' then aux sigma lst
+                    if Reduction.are_convertible sg t1' t2' then aux sigma lst
                     else None
 
                 | App (f,a,args), App (f',a',args') ->
@@ -91,8 +91,8 @@ let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : SS.t option =
                 | _, _ -> None
         end
   in
-  if term_eq Typed a b then Some (SS.identity Typed)
-  else aux (SS.identity Typed) [(q,a,b)]
+  if term_eq a b then Some SS.identity
+  else aux SS.identity [(q,a,b)]
 
 (* ********************** CONTEXT *)
 
@@ -120,7 +120,7 @@ struct
       | Kind when !coc -> (l,x,jdg.te) :: jdg.ctx
       (*Note that this and RMeta are the only places where the coc flag has an effect *)
       | _ -> raise (TypingError (ConvertibilityError
-                                   (Typed, jdg.te, to_context jdg.ctx, mk_Type dloc, jdg.ty)))
+                                   (jdg.te, to_context jdg.ctx, mk_Type dloc, jdg.ty)))
 
   let unsafe_add ctx l x ty = (l,x,ty)::ctx
 
@@ -128,7 +128,7 @@ struct
     try
       let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty
     with Failure _ ->
-      raise (TypingError (VariableNotFound (Typed,l,x,n,ctx)))
+      raise (TypingError (VariableNotFound (l,x,n,ctx)))
 
   let destruct = function
     | [] -> None
@@ -169,7 +169,7 @@ module type Meta = sig
   val unify_sort : Signature.t -> ctx -> extra term -> bool t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
-                    Signature.t -> ctx -> loc -> pextra -> jdg t
+                    Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
 
   val simpl : extra term -> extra term t
 end
@@ -203,17 +203,17 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
   let ctx_add _ = Context.add
   let unsafe_add = Context.unsafe_add
   
-  let unify sg ctx t u = Reduction.are_convertible Typed sg t u
+  let unify sg ctx t u = Reduction.are_convertible sg t u
 
   let unify_sort sg ctx = function
     | Kind | Type _ -> true
     | _ -> false
 
-  let pi sg ctx t = match Reduction.whnf Typed sg t with
+  let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
     | _ -> None
     
-  let infer_extra infer check sg ctx lc ex = ex.exfalso
+  let infer_extra infer check sg ctx lc kind ex = ex.exfalso
 
   let simpl x = x
 end
@@ -224,14 +224,13 @@ module type ElaborationS = sig
   type 'a t
 
   type pextra
+  type extra
   type ctx
   type jdg
 
   val infer       : Signature.t -> ctx -> pextra term -> jdg t
 
   val check       : Signature.t -> pextra term -> jdg -> jdg t
-
-  val infer_pattern : Signature.t -> ctx -> int -> extra Subst.S.t -> pattern -> (extra term*extra Subst.S.t) t
 end
 
 module Elaboration (M:Meta) = struct
@@ -249,7 +248,7 @@ module Elaboration (M:Meta) = struct
     | Kind -> fail (KindIsNotTypable)
     | Type l -> M.return (judge ctx (mk_Type l) mk_Kind)
     | DB (l,x,n) -> M.return (judge ctx (mk_DB l x n) (M.get_type ctx l x n))
-    | Const (l,md,id) -> M.return (judge ctx (mk_Const l md id) (Signature.get_type sg l md id))
+    | Const (l,md,id) -> M.return (judge ctx (mk_Const l md id) (lift_term (Signature.get_type sg l md id)))
     | App (f,a,args) -> infer sg ctx f >>= fun jdg_f ->
         check_app sg jdg_f [] [] (a::args)
     | Pi (l,x,a,b) ->
@@ -268,16 +267,10 @@ module Elaboration (M:Meta) = struct
               | _ -> M.return (judge ctx (mk_Lam l x (Some (jdg_te jdg_a)) (jdg_te jdg_b))
                        (mk_Pi l x (jdg_te jdg_a) (jdg_ty jdg_b)))
           )
-    | Lam  (l,x,None,b) -> infer sg ctx (mk_Lam l x (Some (mk_Hole l x)) b)
-    | Hole (lc,s) ->
-        M.new_meta ctx lc s MType >>= fun mk ->
-        M.new_meta ctx lc s (MTyped mk) >>= fun mj ->
-        M.return (judge ctx mj mk)
-    | Meta (lc,s,n,ts) -> M.meta_constraint lc s n >>= fun (ctx0,ty0) ->
-        check_subst sg ctx ts ctx0 >>= fun ts' ->
-        M.return (judge ctx (mk_Meta lc s n ts') (subst_l (List.map snd ts') 0 ty0))
+    | Lam  (l,x,None,b) -> fail (DomainFreeLambda l)
+    | Extra (l,kind,ex) -> infer_extra infer check sg ctx l kind ex
 
-  and check sg (te:term) (jty:jdg) : jdg t =
+  and check sg (te:pextra term) (jty:jdg) : jdg t =
     let ty_exp = jdg_te jty in
     let ctx = jdg_ctx jty in
       match te with (* Maybe do the match on term and type at the same time? In case type is a meta. *)
@@ -307,75 +300,69 @@ module Elaboration (M:Meta) = struct
           | None -> fail (ProductExpected (te,M.to_context ctx,ty))
           end
 
-  and check_subst sg ctx ts ctx0 =
-    let rec aux sigma rho delta = match rho, delta with
-      | [], [] -> M.return sigma
-      | (x,te)::rho0, (_,_,ty0)::delta0 -> let ty = subst_l (List.map snd sigma) 0 ty0 in
-          check sg te (judge ctx ty (mk_Type dloc (* (x) *))) >>= fun jdg ->
-          aux ((x,jdg_te jdg)::sigma) rho0 delta0
-      | _, _ -> assert false
-      in
-    aux [] (List.rev ts) (List.rev ctx0)
+end
 
+module Checker = Elaboration(KMeta)
 
   (* ********************** PATTERNS *)
-  
-  let rec infer_pattern sg (ctx:ctx) (q:int) (sigma:SS.t) (pat:pattern) : (term*SS.t) t =
+module Patterns = struct
+  open KMeta
+  open Checker
+
+  let rec infer_pattern sg (ctx:ctx) (q:int) (sigma:typed SS.t) (pat:pattern) : (typed term*typed SS.t) t =
     match pat with
     | Pattern (l,md,id,args) ->
-      M.fold (infer_pattern_aux sg ctx q)
+      fold (infer_pattern_aux sg ctx q)
         (mk_Const l md id,SS.apply sigma (Signature.get_type sg l md id) q,sigma) args >>= fun (_,ty,si) ->
-      M.return (ty,si)
+      return (ty,si)
     | Var (l,x,n,args) ->
-      M.fold (infer_pattern_aux sg ctx q)
-        (mk_DB l x n,SS.apply sigma (M.get_type ctx l x n) q,sigma) args >>= fun (_,ty,si) ->
-      M.return (ty,si)
-    | Brackets t -> infer sg ctx t >>= fun jdg -> M.return ( jdg_ty jdg, SS.identity )
+      fold (infer_pattern_aux sg ctx q)
+        (mk_DB l x n,SS.apply sigma (get_type ctx l x n) q,sigma) args >>= fun (_,ty,si) ->
+      return (ty,si)
+    | Brackets t -> infer sg ctx t >>= fun jdg -> return ( jdg_ty jdg, SS.identity )
     | Lambda (l,x,p) -> fail (DomainFreeLambda l)
 
-  and infer_pattern_aux sg (ctx:ctx) (q:int) (f,ty_f,sigma0:term*term*SS.t) (arg:pattern) : (term*term*SS.t) t =
-    M.pi sg ctx ty_f >>= function
+  and infer_pattern_aux sg (ctx:ctx) (q:int) (f,ty_f,sigma0:typed term*typed term*typed SS.t) (arg:pattern) : (typed term*typed term*typed SS.t) t =
+    pi sg ctx ty_f >>= function
       | Some (_,_,a,b) ->
           check_pattern sg ctx q a sigma0 arg >>= fun sigma ->
           let arg' = pattern_to_term arg in
           let b2 = SS.apply sigma b (q+1) in
           let arg2 = SS.apply sigma arg' q in
-          M.return ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
-      | None -> fail (ProductExpected (f,M.to_context ctx,ty_f))
+          return ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
+      | None -> fail (ProductExpected (f,to_context ctx,ty_f))
 
-  and check_pattern sg (ctx:ctx) (q:int) (exp_ty:term) (sigma0:SS.t) (pat:pattern) : SS.t t =
+  and check_pattern sg (ctx:ctx) (q:int) (exp_ty:typed term) (sigma0:typed SS.t) (pat:pattern) : typed SS.t t =
     match pat with
     | Lambda (l,x,p) ->
         begin
-          M.pi sg ctx exp_ty >>= function
+          pi sg ctx exp_ty >>= function
             | Some (l,x,a,b) ->
-                let ctx2 = M.unsafe_add ctx l x a in
+                let ctx2 = unsafe_add ctx l x a in
                   check_pattern sg ctx2 (q+1) b sigma0 p
-            | None -> fail (ProductExpected (pattern_to_term pat,M.to_context ctx,exp_ty))
+            | None -> fail (ProductExpected (pattern_to_term pat,to_context ctx,exp_ty))
         end
      | Brackets t ->
        check sg t (judge ctx exp_ty (mk_Type dloc (* (x) *))) >>= fun _ ->
-         M.return SS.identity
+         return SS.identity
     | _ ->
         begin
           infer_pattern sg ctx q sigma0 pat >>= fun (inf_ty,sigma1) ->
-          M.simpl exp_ty >>= fun exp_ty ->
-          M.simpl inf_ty >>= fun inf_ty ->
+          simpl exp_ty >>= fun exp_ty ->
+          simpl inf_ty >>= fun inf_ty ->
             match pseudo_unification sg q exp_ty inf_ty with
               | None ->
-                fail (ConvertibilityError (pattern_to_term pat,M.to_context ctx,exp_ty,inf_ty))
-              | Some sigma2 -> M.return (SS.merge sigma1 sigma2)
+                fail (ConvertibilityError (pattern_to_term pat,to_context ctx,exp_ty,inf_ty))
+              | Some sigma2 -> return (SS.merge sigma1 sigma2)
         end
 end
 
-module Checker = Elaboration(KMeta)
-
 (* **** REFINE AND CHECK ******************************** *)
 
-let inference sg (te:term) : judgment =
+let inference sg (te:typed term) : judgment =
     Checker.infer sg Context.empty te
 
-let checking sg (te:term) (ty_exp:term) : judgment =
+let checking sg (te:typed term) (ty_exp:typed term) : judgment =
   let jty = Checker.infer sg Context.empty ty_exp in
     Checker.check sg te jty
 
@@ -383,7 +370,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
     List.fold_left (fun ctx (l,id,ty) -> Context.add l id (Checker.infer sg ctx ty) )
       Context.empty (List.rev ctx) in
-  let (ty_inf,sigma) = Checker.infer_pattern sg ctx 0 SS.identity le in
+  let (ty_inf,sigma) = Patterns.infer_pattern sg ctx 0 SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in

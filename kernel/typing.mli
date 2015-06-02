@@ -4,11 +4,11 @@ open Basics
 
 type typing_error =
   | KindIsNotTypable
-  | ConvertibilityError : 'a tkind*'a term*'a context*'a term*'a term -> typing_error
-  | VariableNotFound : 'a tkind*loc*ident*int*'a context -> typing_error
-  | SortExpected : 'a tkind*'a term*'a context*'a term -> typing_error
-  | ProductExpected : 'a tkind*'a term*'a context*'a term -> typing_error
-  | InexpectedKind : 'a tkind*'a term*'a context -> typing_error
+  | ConvertibilityError : 'a term*'b context*'c term*'d term -> typing_error
+  | VariableNotFound : loc*ident*int*'a context -> typing_error
+  | SortExpected : 'a term*'b context*'c term -> typing_error
+  | ProductExpected : 'a term*'b context*'c term -> typing_error
+  | InexpectedKind : 'a term*'b context -> typing_error
   | DomainFreeLambda of loc
   | MetaInKernel of loc*ident
   | InferSortMeta of loc*ident
@@ -69,7 +69,7 @@ module type Meta = sig
   val unify_sort : Signature.t -> ctx -> extra term -> bool t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
-                    Signature.t -> ctx -> loc -> pextra -> jdg t
+                    Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
 
   val simpl : extra term -> extra term t
 end
@@ -90,8 +90,6 @@ module type ElaborationS = sig
   val check       : Signature.t -> pextra term -> jdg -> jdg t
   (** [check sg te ty] builds a typing judgment for the term [te] of type [ty.te]
   * in the signature [sg] and context [ty.ctx]. *)
-  
-  val infer_pattern : Signature.t -> ctx -> int -> extra Subst.S.t -> pattern -> (extra term*extra Subst.S.t) t
 end
 
 module Elaboration (M:Meta) : ElaborationS with type 'a t = 'a M.t and type pextra = M.pextra and type extra = M.extra and type ctx = M.ctx and type jdg = M.jdg

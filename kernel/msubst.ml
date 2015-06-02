@@ -5,7 +5,7 @@ type t = pretyped term IntMap.t
 
 let identity = IntMap.empty
 
-let subst_l l n t = Subst.psubst_l Pretyped (LList.of_list (List.map Lazy.from_val l)) n t
+let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
 
 let meta_raw (sigma:t) n = try Some (IntMap.find n sigma) with | Not_found -> None
 
@@ -26,7 +26,7 @@ let apply (sigma:t) (t:pretyped term) : pretyped term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
         | Some mt' -> aux mt'
         | None -> mk_Extra lc (s,n,(List.map (fun (x,t) -> x,aux t) ts))
         end
@@ -39,12 +39,13 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
         | Some mt' -> aux mt'
         | None -> None
         end
+    in aux t
 
-let rec whnf sg sigma t = match Reduction.whnf Pretyped sg t with
+let rec whnf sg sigma t = match Reduction.whnf sg t with
   | Meta _ as mt -> begin match meta_val sigma mt with
       | Some mt' -> whnf sg sigma mt'
       | None -> mt

@@ -72,13 +72,18 @@ let rec print_term out = function
       Format.fprintf out "@[%a ->@ @[%a@]@]" print_term_wp a print_term b
   | Pi  (_,x,a,b)      ->
       Format.fprintf out "@[%a:%a ->@ @[%a@]@]" print_ident x print_term_wp a print_term b
-  | Hole (_,s) when ident_eq s empty -> Format.pp_print_string out "?"
-  | Hole (_,s)         -> Format.fprintf out "?{\"%a\"}" print_ident s
-  | Meta (_,s,n,ts) when ident_eq s empty -> Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
-  | Meta (_,s,n,ts)    -> Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+  | Extra (_,kind,ex) -> let f (type a) (kind:a tkind) (ex:a) = match kind with
+      | Untyped -> let {hole=s} = ex in if ident_eq s empty
+        then Format.pp_print_string out "?"
+        else Format.fprintf out "?{\"%a\"}" print_ident s
+      | Pretyped -> let {meta=(s,n,ts)} = ex in if ident_eq s empty
+        then Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+        else Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+      | Typed -> ex.exfalso
+      in f kind ex
 
 and print_term_wp out = function
-  | Kind | Type _ | DB _ | Const _ | Hole _ | Meta _ as t -> print_term out t
+  | Kind | Type _ | DB _ | Const _ | Hole _ | Extra _ as t -> print_term out t
   | t                                  -> Format.fprintf out "(%a)" print_term t
 
 let print_bv out (_,id,i) = print_db out (id,i)

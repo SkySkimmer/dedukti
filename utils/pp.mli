@@ -14,7 +14,7 @@ val print_pterm : Format.formatter -> preterm -> unit
 
 val print_ppattern : Format.formatter -> prepattern -> unit
 
-val print_term  : Format.formatter -> term -> unit
+val print_term  : Format.formatter -> 'a term -> unit
 
 val print_pattern : Format.formatter -> pattern -> unit
 
@@ -23,4 +23,4 @@ val print_rule  : Format.formatter -> rule -> unit
 
 val print_frule : Format.formatter -> rule_infos -> unit
 
-val print_context: Format.formatter -> context -> unit
+val print_context: Format.formatter -> 'a context -> unit

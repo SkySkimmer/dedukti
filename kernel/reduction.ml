@@ -109,7 +109,7 @@ let rec find_case (st:'a state) (cases:(case*dtree) list) : 'a find_case_ty =
     | _, _::tl -> find_case st tl
 
 
-let rec reduce (sg:Signature.t) (st:'a state) : 'a state =
+let rec reduce : type a. _ -> a state -> a state = fun sg st ->
   match beta_reduce st with
     | { ctx; term=Const (l,m,v); stack } as config ->
         begin
@@ -129,7 +129,7 @@ let rec reduce (sg:Signature.t) (st:'a state) : 'a state =
     | config -> config
 
 (*TODO implement the stack as an array ? (the size is known in advance).*)
-and rewrite (sg:Signature.t) (stack:'a stack) (g:dtree) : ('a env*'a term) option =
+and rewrite : type a. _ -> a stack -> _ -> (a env*a term) option = fun sg stack g ->
   let rec test ctx = function
     | [] -> true
     | (Linearity (t1,t2))::tl ->
@@ -177,12 +177,12 @@ and rewrite (sg:Signature.t) (stack:'a stack) (g:dtree) : ('a env*'a term) optio
                       else bind_opt (rewrite sg stack) def
           end
 
-and unshift sg q te =
+and unshift : type a. _ -> _ -> a term -> a term = fun sg q te ->
   try Subst.unshift q te
   with Subst.UnshiftExn ->
     Subst.unshift q (snf sg te)
 
-and get_context_syn (sg:Signature.t) (stack:'a stack) (ord:pos LList.t) : 'a env option =
+and get_context_syn : type a. _ -> a stack -> _ -> a env option = fun sg stack ord ->
   try Some (LList.map (
     fun p ->
       if ( p.depth = 0 ) then
@@ -193,7 +193,7 @@ and get_context_syn (sg:Signature.t) (stack:'a stack) (ord:pos LList.t) : 'a env
   ) ord )
   with Subst.UnshiftExn -> ( (*Print.debug "Cannot unshift";*) None )
 
-and get_context_mp (sg:Signature.t) (stack:'a stack) (pb_lst:abstract_pb LList.t) : 'a env option =
+and get_context_mp : type a. _ -> a stack -> _ -> a env option = fun sg stack pb_lst ->
   let aux (pb:abstract_pb)  =
     Lazy.from_val ( unshift sg pb.depth2 (
       (Matching.resolve pb.dbs (term_of_state (List.nth stack pb.position2))) ))
@@ -206,24 +206,21 @@ and get_context_mp (sg:Signature.t) (stack:'a stack) (pb_lst:abstract_pb LList.t
 (* ********************* *)
 
 (* Weak Normal Form *)
-and whnf sg term = term_of_state ( reduce sg { ctx=LList.nil; term; stack=[] } )
+and whnf : type a. _ -> a term -> a term = fun sg term -> term_of_state ( reduce sg { ctx=LList.nil; term; stack=[] } )
 
 (* Strong Normal Form *)
-and snf sg (t:'a term) : 'a term =
+and snf : type a. _ -> a term -> a term = fun sg t ->
   match whnf sg t with
     | Kind | Const _
     | DB _ | Type _ as t' -> t'
     | App (f,a,lst)     -> mk_App (snf sg f) (snf sg a) (List.map (snf sg) lst)
     | Pi (_,x,a,b)        -> mk_Pi dloc x (snf sg a) (snf sg b)
     | Lam (_,x,a,b)       -> mk_Lam dloc x None (snf sg b)
-    | Extra (_,kind,ex) as t' -> let f (type a) (snf:Signature.t -> a term -> a term) (kind:a tkind) (t':a term) (ex:a) : a term = match kind with
-        | Pretyped -> let { meta=(s,n,ts) } = ex in
-            mk_Meta dloc s n (List.map (fun (x,t) -> x,snf sg t) ts)
-        | Untyped -> t'
-        | Typed -> t'
-        in f snf kind t' ex
+    | Extra (_,Untyped,_) as t' -> t'
+    | Extra (lc,Pretyped,Meta(s,n,ts)) -> mk_Meta lc s n (List.map (fun (x,t) -> x,snf sg t) ts)
+    | Extra (_,Typed,ex) -> ex.exfalso
 
-and are_convertible_lst sg : ('a term*'a term) list -> bool = function
+and are_convertible_lst : type a. _ -> (a term*a term) list -> bool = fun sg -> function
   | [] -> true
   | (t1,t2)::lst ->
     begin
@@ -238,14 +235,11 @@ and are_convertible_lst sg : ('a term*'a term) list -> bool = function
             add_to_list2 args args' ((f,f')::(a,a')::lst)
           | Lam (_,_,_,b), Lam (_,_,_,b') -> Some ((b,b')::lst)
           | Pi (_,_,a,b), Pi (_,_,a',b') -> Some ((a,a')::(b,b')::lst)
-          | Extra (_,kind,ex), Extra (_,_,ex') ->
-            let f (type a) (kind:a tkind) (lst:(a term*a term) list) (ex:a) (ex':a) : (a term*a term) list option = match kind with
-              | Pretyped -> let { meta=(_,n,ts) } = ex and { meta=(_,n',ts') } = ex' in
-                  if n=n' then add_to_list2 (List.map snd ts) (List.map snd ts') lst
-                  else None
-              | Untyped -> Some lst
-              | Typed -> Some lst
-              in f kind lst ex ex'
+          | Extra (_,Untyped,_), Extra (_,Untyped,_) -> Some lst
+          | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) ->
+              if n=n' then add_to_list2 (List.map snd ts) (List.map snd ts') lst
+              else None
+          | Extra (_,Typed,ex), Extra (_,Typed,_) -> ex.exfalso
           | t1, t2 -> None
       ) with
       | None -> false

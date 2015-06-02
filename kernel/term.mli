@@ -19,8 +19,9 @@ and 'a tkind =
   | Pretyped : pretyped tkind
   | Typed : typed tkind
 
-and untyped = { hole : ident }
-and pretyped = { meta : ident*int*((ident*(pretyped term)) list) }
+and untyped = U of ident
+and pretyped = 
+  | Meta of ident*int*((ident*(pretyped term)) list)
 and typed = { exfalso : 'r. 'r }
 
 val get_loc : 'a term -> loc

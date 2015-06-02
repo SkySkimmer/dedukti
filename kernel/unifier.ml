@@ -33,8 +33,8 @@ let filter_unique_vars subst args =
 let meta_deldeps side (ctx,lop,rop) =
   let active,passive = match side with | LEFT -> (lop,rop) | RIGHT -> (rop,lop) in
   begin match active with
-    | App (Extra (lc,Pretyped,{meta=(s,n,ts)}), a, args) -> return (lc,s,n,ts,a::args)
-    | Extra (lc,Pretyped,{meta=(s,n,ts)}) -> return (lc,s,n,ts,[])
+    | App (Extra (lc,Pretyped,Meta(s,n,ts)), a, args) -> return (lc,s,n,ts,a::args)
+    | Extra (lc,Pretyped,Meta(s,n,ts)) -> return (lc,s,n,ts,[])
     | _ -> zero Not_Applicable
     end >>= fun (lc,s,n,ts,args) ->
   let clean,filter = filter_unique_vars ts args in

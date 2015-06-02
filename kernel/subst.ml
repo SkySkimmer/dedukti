@@ -1,73 +1,47 @@
 open Basics
 open Term
 
-let subst_handler (type a) (aux : a term -> a term) : a term -> a term = function
-  | Extra (lc,kind,ex) as t -> begin match kind with
-      | Untyped -> t
-      | Pretyped -> let { meta=(s,n,ts) } = ex in
-          mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
-      | Typed -> t
-      end
-  | _ -> assert false
-
-let rec shift_rec (r:int) (k:int) : 'a term -> 'a term = function
-  | DB (_,x,n) as t -> if n<k then t else mk_DB dloc x (n+r)
-  | App (f,a,args) ->
-      mk_App (shift_rec r k f) (shift_rec r k a) (List.map (shift_rec r k) args )
-  | Lam (_,x,_,f) -> mk_Lam dloc x None (shift_rec r (k+1) f)
-  | Pi  (_,x,a,b) -> mk_Pi dloc x (shift_rec r k a) (shift_rec r (k+1) b)
-  | Extra _ as t -> subst_handler (fun t -> shift_rec r k t) t
+let rec apply_db : type a. (int -> a term -> a term) -> int -> a term -> a term = fun aux q -> function
   | Kind | Type _ | Const _ as t -> t
+  | DB _ as t -> aux q t
+  | App (f,a,args) -> mk_App (apply_db aux q f) (apply_db aux q a) (List.map (apply_db aux q) args)
+  | Lam (lc,x,a,b) -> mk_Lam lc x (map_opt (apply_db aux q) a) (apply_db aux (q+1) b)
+  | Pi (lc,x,a,b) -> mk_Pi lc x (apply_db aux q a) (apply_db aux (q+1) b)
+  | Extra (_,Untyped,_) as t -> t
+  | Extra (lc,Pretyped,Meta(s,n,ts)) -> mk_Meta lc s n (List.map (fun (x,t) -> x,apply_db aux q t) ts)
+  | Extra (_,Typed,ex) -> ex.exfalso
+
+let rec shift_rec (r:int) (k:int) (t:'a term) = apply_db (fun k -> function
+  | DB (lc,x,n) as t -> if n<k then t else mk_DB lc x (n+r)
+  | _ -> assert false) k t
 
 let shift r t = shift_rec r 0 t
 
 exception UnshiftExn
 
-let unshift q (te:'a term) : 'a term =
-  let rec aux k = function
+let unshift q (te:'a term) : 'a term = apply_db (fun k -> function
   | DB (_,_,n) as t when n<k -> t
-  | DB (l,x,n) ->
-      if n-q-k >= 0 then mk_DB l x (n-q-k)
+  | DB (lc,x,n) ->
+      if n-q-k >= 0 then mk_DB lc x (n-q-k)
       else raise UnshiftExn
-  | App (f,a,args) -> mk_App (aux k f) (aux k a) (List.map (aux k) args)
-  | Lam (l,x,None,f) -> mk_Lam l x None (aux (k+1) f)
-  | Lam (l,x,Some a,f) -> mk_Lam l x (Some (aux k a)) (aux (k+1) f)
-  | Pi  (l,x,a,b) -> mk_Pi l x (aux k a) (aux (k+1) b)
-  | Extra _ as t -> subst_handler (aux k) t
-  | Type _ | Kind | Const _ as t -> t
-  in
-    aux 0 te
+  | _ -> assert false) 0 te
 
 let rec psubst_l (args:('a term Lazy.t) LList.t) (k:int) (t:'a term) : 'a term =
   let nargs = args.LList.len in
-  match t with
-    | Type _ | Kind | Const _ -> t
-    | DB (_,x,n) when (n >= (k+nargs))  -> mk_DB dloc x (n-nargs)
-    | DB (_,_,n) when (n < k)           -> t
+  apply_db (fun k -> function
+    | DB (lc,x,n) when (n >= (k+nargs)) -> mk_DB lc x (n-nargs)
+    | DB (_,_,n) as t when (n < k) -> t
     | DB (_,_,n) (* (k<=n<(k+nargs)) *) ->
         shift k ( Lazy.force (LList.nth args (n-k)) )
-    | Lam (_,x,_,b)                     ->
-        mk_Lam dloc x None (psubst_l args (k+1) b)
-    | Pi  (_,x,a,b)                     ->
-        mk_Pi dloc x (psubst_l args k a) (psubst_l args (k+1) b)
-    | App (f,a,lst)                     ->
-        mk_App (psubst_l args k f) (psubst_l args k a)
-          (List.map (psubst_l args k) lst)
-    | Extra _ as t -> subst_handler (psubst_l args k) t
+    | _ -> assert false) k t
 
 let subst (te:'a term) (u:'a term) =
-  let rec aux k = function
-    | DB (l,x,n) as t ->
+  apply_db (fun k -> function
+    | DB (lc,x,n) as t ->
         if n = k then shift k u
-        else if n>k then mk_DB l x (n-1)
+        else if n>k then mk_DB lc x (n-1)
         else (*n<k*) t
-    | Type _ | Kind | Const _ as t -> t
-    | Lam (_,x,_,b) -> mk_Lam dloc x None (aux (k+1) b)
-    | Pi  (_,x,a,b) -> mk_Pi dloc  x (aux k a) (aux (k+1) b)
-    | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Extra _ as t -> subst_handler (aux k) t
-  in aux 0 te
-
+    | _ -> assert false) 0 te
 
 module S =
 struct
@@ -76,32 +50,17 @@ struct
   let identity = IntMap.empty
 
   let apply (sigma:'a t) (te:'a term) (q:int) : 'a term =
-    let rec aux q = function
-      | Kind | Type _ | Const _ as t -> t
+    apply_db (fun q -> function
       | DB (_,_,k) as t when k<q -> t
       | DB (_,_,k) as t (*when k>=q*) ->
           begin
             try shift q (snd (IntMap.find (k-q) sigma))
             with Not_found -> t
           end
-      | App (f,a,args) -> mk_App (aux q f) (aux q a) (List.map (aux q) args)
-      | Lam (l,x,Some ty,te) -> mk_Lam l x (Some (aux q ty)) (aux (q+1) te)
-      | Lam (l,x,None,te) -> mk_Lam l x None (aux (q+1) te)
-      | Pi (l,x,a,b) -> mk_Pi l x (aux q a) (aux (q+1) b)
-      | Extra _ as t -> subst_handler (aux q) t
-    in
-      aux q te
-
-  let occurs_handler (type a) (aux:a term -> bool) : a term -> bool = function
-    | Extra (_,kind,ex) -> begin match kind with
-      | Untyped -> false
-      | Pretyped -> let {meta=(_,_,ts)} = ex in List.exists (fun (_,t) -> aux t) ts
-      | Typed -> false
-      end
-    | _ -> assert false
+      | _ -> assert false) q te
 
   let occurs (n:int) (te:'a term) : bool =
-    let rec aux q = function
+    let rec aux : type a. int -> a term -> bool = fun q -> function
       | Kind | Type _ | Const _ -> false
       | DB (_,_,k) when k<q -> false
       | DB (_,_,k) (*when k>=q*) -> ( k-q == n )
@@ -109,7 +68,9 @@ struct
       | Lam (_,_,None,te) -> aux (q+1) te
       | Lam (_,_,Some ty,te) -> aux q ty || aux (q+1) te
       | Pi (_,_,a,b) -> aux q a || aux (q+1) b
-      | Extra _ as t -> occurs_handler (aux q) t
+      | Extra (_,Untyped,_) -> false
+      | Extra (_,Pretyped,Meta(_,_,ts)) -> List.exists (fun (_,t) -> aux q t) ts
+      | Extra (_,Typed,ex) -> ex.exfalso
     in aux 0 te
 
   let add (sigma:'a t) (x:ident) (n:int) (t:'a term) : 'a t option =

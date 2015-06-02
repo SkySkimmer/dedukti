@@ -9,7 +9,7 @@ let permute (dbs:int LList.t) (te:'a term) : 'a term =
     | [] -> raise NotUnifiable
     | q::lst -> if q=n then size-1-cpt else find n (cpt+1) lst
   in
-  let rec aux k = function
+  let rec aux : type a. int -> a term -> a term = fun k -> function
     | Type _ | Kind | Const _ as t -> t
     | DB (_,x,n) as t ->
         if n < k then t
@@ -19,12 +19,10 @@ let permute (dbs:int LList.t) (te:'a term) : 'a term =
     | Lam (l,x,a,b) -> mk_Lam dloc x None (aux (k+1) b)
     | Pi  (_,x,a,b) -> mk_Pi  dloc x (aux k a) (aux (k+1) b)
     | App (f,a,lst) -> mk_App (aux k f) (aux k a) (List.map (aux k) lst)
-    | Extra (l,kind,ex) as t -> let f (type a) (aux:a term -> a term) (kind:a tkind) (t:a term) (ex:a) : a term = match kind with
-        | Untyped -> t
-        | Pretyped -> let {meta=(s,n,ts)} = ex in
-            mk_Meta l s n (List.map (fun (x,t) -> x,aux t) ts)
-        | Typed -> ex.exfalso
-        in f (aux k) kind t ex
+    | Extra (_,Untyped,_) as t -> t
+    | Extra (l,Pretyped,Meta(s,n,ts)) ->
+        mk_Meta l s n (List.map (fun (x,t) -> x,aux k t) ts)
+    | Extra (_,Typed,ex) -> ex.exfalso
   in aux 0 te
 
 

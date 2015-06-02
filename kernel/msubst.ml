@@ -10,7 +10,7 @@ let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n 
 let meta_raw (sigma:t) n = try Some (IntMap.find n sigma) with | Not_found -> None
 
 let meta_val (sigma:t) : pretyped term -> pretyped term option = function
-  | Extra (_,Pretyped,{meta=(_,n,ts)}) -> begin
+  | Extra (_,Pretyped,Meta(_,n,ts)) -> begin
     try let te0 = IntMap.find n sigma in
       let subst1 = List.map snd ts in
       let te = subst_l subst1 0 te0 in
@@ -26,7 +26,7 @@ let apply (sigma:t) (t:pretyped term) : pretyped term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,Pretyped,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,Meta(s,n,ts)) as mt -> begin match meta_val sigma mt with
         | Some mt' -> aux mt'
         | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
         end
@@ -42,7 +42,7 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,Pretyped,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,Meta(s,n,ts)) as mt -> begin match meta_val sigma mt with
         | Some mt' -> aux mt'
         | None -> let open Typing in raise (TypingError (Not_Inferrable (lc,s)))
         end

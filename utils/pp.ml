@@ -57,7 +57,7 @@ and print_ppattern_wp out = function
   | PPattern (_,_,_,_::_) as p  -> Format.fprintf out "(%a)" print_ppattern p
   | p                           -> print_ppattern out p
 
-let rec print_term out  : 'a term -> unit = function
+let rec print_term : type a. _ -> a term -> unit = fun out -> function
   | Kind               -> Format.pp_print_string out "Kind"
   | Type _             -> Format.pp_print_string out "Type"
   | DB  (_,x,n)        -> print_db out (x,n)
@@ -72,17 +72,15 @@ let rec print_term out  : 'a term -> unit = function
       Format.fprintf out "@[%a ->@ @[%a@]@]" print_term_wp a print_term b
   | Pi  (_,x,a,b)      ->
       Format.fprintf out "@[%a:%a ->@ @[%a@]@]" print_ident x print_term_wp a print_term b
-  | Extra (_,kind,ex) -> let f (type a) (print_term:_ -> a term -> unit) (kind:a tkind) (ex:a) = match kind with
-      | Untyped -> let {hole=s} = ex in if ident_eq s empty
-        then Format.pp_print_string out "?"
-        else Format.fprintf out "?{\"%a\"}" print_ident s
-      | Pretyped -> let {meta=(s,n,ts)} = ex in if ident_eq s empty
-        then Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
-        else Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
-      | Typed -> ex.exfalso
-      in f print_term kind ex
+  | Extra (_,Untyped,U s) when (ident_eq s empty) -> Format.pp_print_string out "?"
+  | Extra (_,Untyped,U s) -> Format.fprintf out "?{\"%a\"}" print_ident s
+  | Extra (_,Pretyped,Meta(s,n,ts)) when (ident_eq s empty) ->
+      Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+  | Extra (_,Pretyped,Meta(s,n,ts)) ->
+      Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+  | Extra (_,Typed,ex) -> ex.exfalso
 
-and print_term_wp out = function
+and print_term_wp : type a. _ -> a term -> unit = fun out -> function
   | Kind | Type _ | DB _ | Const _ | Extra _ as t -> print_term out t
   | t                                  -> Format.fprintf out "(%a)" print_term t
 

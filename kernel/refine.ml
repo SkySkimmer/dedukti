@@ -68,7 +68,7 @@ end = struct
         (function | Not_Applicable | Not_Unifiable -> return None | e -> zero e)
 
   let infer_extra infer check sg ctx lc kind ex = match kind with
-    | Untyped -> let {hole=s} = ex in
+    | Untyped -> let U s = ex in
         new_meta ctx lc s MType >>= fun mk ->
         new_meta ctx lc s (MTyped mk) >>= fun mj ->
         return (judge ctx mj mk)

@@ -89,7 +89,7 @@ let meta_decl lc s n = get >>= fun pb ->
   with | Not_found -> raise (TypingError (UnknownMeta (lc,s,n)))
 
 let add_sort_pair sg ctx = function
-  | Extra (lc,Pretyped,{meta=(s,x,ts)}) as t -> meta_decl lc s x >>= begin function
+  | Extra (lc,Pretyped,Meta(s,x,ts)) as t -> meta_decl lc s x >>= begin function
       | (_,MSort) -> return ()
       | _ -> new_meta ctx lc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
       end
@@ -142,7 +142,7 @@ let rec expected_type sg ctx = function
       return (mk_Pi lc x a ty)
   | Lam (lc,_,None,_) -> raise (TypingError (DomainFreeLambda lc))
   | Pi (lc,x,a,b) -> expected_type sg ((lc,x,a)::ctx) b
-  | Extra (lc,Pretyped,{meta=(s,x,ts)}) -> meta_constraint lc s x >>= fun (_,ty0) ->
+  | Extra (lc,Pretyped,Meta(s,x,ts)) -> meta_constraint lc s x >>= fun (_,ty0) ->
       return (subst_l (List.map snd ts) 0 ty0)
 
 (* returns None if there are no (unsolved) disagreement pairs *)
@@ -194,7 +194,7 @@ let rec are_convertible_lst sg : (pterm*pterm) list -> bool t = function
             return (add_to_list2 args args' ((f,f')::(a,a')::lst))
           | Lam (_,_,_,b), Lam (_,_,_,b') -> return (Some ((b,b')::lst))
           | Pi (_,_,a,b), Pi (_,_,a',b') -> return (Some ((a,a')::(b,b')::lst))
-          | Extra (_,Pretyped,{meta=(_,n,ts)}), Extra (_,Pretyped,{meta=(_,n',ts')}) when ( n==n' ) ->
+          | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when ( n==n' ) ->
               return (add_to_list2 (List.map snd ts) (List.map snd ts') lst)
           | t1, t2 -> return None
       ) >>= function
@@ -249,7 +249,7 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
   | Lam (_,_,None,b), Lam (_,y,Some a',b') -> return [((dloc,y,a')::ctx,b,b')]
   | Lam _, Lam _ -> zero DecomposeDomainFreeLambdas
   | Pi (_,x,a,b), Pi (_,_,a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
-  | Extra (_,Pretyped,{meta=(_,n,ts)}), Extra (_,Pretyped,{meta=(_,n',ts')}) when ( n==n' ) ->
+  | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when ( n==n' ) ->
       return (List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts')
   | App _, _ | _, App _ | Extra _, _ | _, Extra _ -> zero Not_Applicable
   | Const _, _ | _, Const _ -> zero Not_Applicable
@@ -257,10 +257,10 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
   in pair_modify pair_decompose
 
 let meta_same_same = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
-  | Extra (_,Pretyped,{meta=(_,n,ts)}), Extra (_,Pretyped,{meta=(_,n',ts')}) when (n=n') ->
+  | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when (n=n') ->
     let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
       if b then return [] else zero Not_Applicable
-  | App (Extra (_,Pretyped,{meta=(_,n,ts)}),a,args), App (Extra (_,Pretyped,{meta=(_,n',ts')}),a',args') when (n=n') ->
+  | App (Extra (_,Pretyped,Meta(_,n,ts)),a,args), App (Extra (_,Pretyped,Meta(_,n',ts')),a',args') when (n=n') ->
     let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
       if b then match try Some (List.map2 (fun t1 t2 -> ctx,t1,t2) (a::args) (a'::args')) with | Invalid_argument _ -> None with
           | Some l -> return l
@@ -286,7 +286,7 @@ let rec sanitize_term sigma l = function
   | Lam (lc,x,Some a,b) -> Opt.(sanitize_term sigma l a >>= fun a -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Lam lc x (Some a) b)))
   | Lam (lc,x,None,b) -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Lam lc x None b))
   | Pi (lc,x,a,b) -> Opt.(sanitize_term sigma l a >>= fun a -> Opt.(sanitize_term sigma (true::l) b >>= fun b -> Some (mk_Pi lc x a b)))
-  | Extra (lc,Pretyped,{meta=(s,n,ts)}) as m -> begin match S.meta_val sigma m with
+  | Extra (lc,Pretyped,Meta(s,n,ts)) as m -> begin match S.meta_val sigma m with
       | Some m' -> sanitize_term sigma l m'
       | None -> Opt.(Opt.fold (fun ts (x,t) -> map_opt (fun t -> (x,t)::ts) (sanitize_term sigma l t))
                               [] (List.rev ts) >>= fun ts ->
@@ -323,14 +323,14 @@ let narrow_meta lc s n filter = meta_decl lc s n >>= fun (mctx,mty) ->
     | MType | MSort -> return mty
     end >>= fun mty' ->
   new_meta mctx' lc s mty' >>= function
-    | Extra (lc,Pretyped,{meta=(s,k,_)}) -> let mk = mk_Meta lc s k (context_project filter mctx) in
+    | Extra (lc,Pretyped,Meta(s,k,_)) -> let mk = mk_Meta lc s k (context_project filter mctx) in
         set_meta n mk
     | _ -> assert false
 
 let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
-  | Extra (lc,Pretyped,{meta=(s,n,ts)}), Extra (_,Pretyped,{meta=(_,n',ts')}) when (n=n') ->
+  | Extra (lc,Pretyped,Meta(s,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when (n=n') ->
       return (lc,s,n,ts,ts',[],[])
-  | App (Extra (lc,Pretyped,{meta=(s,n,ts)}),a,args), App (Extra (_,Pretyped,{meta=(_,n',ts')}),a',args') when (n=n') ->
+  | App (Extra (lc,Pretyped,Meta(s,n,ts)),a,args), App (Extra (_,Pretyped,Meta(_,n',ts')),a',args') when (n=n') ->
       return (lc,s,n,ts,ts',a::args,a'::args')
   | _,_ -> zero Not_Applicable
   end >>= fun (lc,s,n,ts,ts',args,args') -> 
@@ -373,7 +373,7 @@ let prune lc s y ts = meta_decl lc s y >>= fun (mctx,mty) ->
     | MType | MSort -> return mty
     end >>= fun mty' ->
   new_meta mctx' lc s mty' >>= function
-    | Extra (lc,Pretyped,{meta=(s,z,_)}) -> let mz = mk_Meta lc s z (context_project filter mctx) in
+    | Extra (lc,Pretyped,Meta(s,z,_)) -> let mz = mk_Meta lc s z (context_project filter mctx) in
         set_meta y mz >>
         return (mk_Meta lc s z (opt_filter filter ts)) (* not sure about this *)
     | _ -> assert false
@@ -398,7 +398,7 @@ let rec invert_term x vars q = function
   | Lam (lc,y,Some a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y (Some a) b)
   | Lam (lc,y,None  ,b) -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y None b)
   | Pi (lc,y,a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Pi lc y a b)
-  | Extra (lc,Pretyped,{meta=(s,y,ts)}) as mt -> get >>= fun pb -> begin match S.meta_val pb.sigma mt with
+  | Extra (lc,Pretyped,Meta(s,y,ts)) as mt -> get >>= fun pb -> begin match S.meta_val pb.sigma mt with
     | Some mt' -> invert_term x vars q mt'
     | None -> if x=y then zero Not_Applicable
       else fold (fun (l,clean) (y,t) -> once (plus
@@ -426,7 +426,7 @@ let rec meta_occurs x = function
   | App (f,a,args) -> List.exists (meta_occurs x) (f::a::args)
   | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> meta_occurs x a || meta_occurs x b
   | Lam (_,_,None,b) -> meta_occurs x b
-  | Extra (_,Pretyped,{meta=(_,y,ts)}) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
+  | Extra (_,Pretyped,Meta(_,y,ts)) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
 
 (* m is a meta whose type or kind must be the same as that of t *)
 let meta_set_ensure_type sg lc s n t =
@@ -436,7 +436,7 @@ let meta_set_ensure_type sg lc s n t =
         return [mctx,ty,ty']
     | MType -> begin match t with
         | Kind -> return []
-        | Extra (lc',Pretyped,{meta=(s',x,_)}) -> meta_decl lc' s' x >>= begin function
+        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function
             | (_,MType) -> return []
             | (_,MSort) -> set_decl n (mctx,MSort) >>= fun () -> return []
             | (_,MTyped _) -> expected_type sg mctx t >>= fun ty' ->
@@ -451,7 +451,7 @@ let meta_set_ensure_type sg lc s n t =
         end
     | MSort -> begin match t with
         | Kind -> return []
-        | Extra (lc',Pretyped,{meta=(s',x,_)}) -> meta_decl lc' s' x >>= begin function
+        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function
             | (mctx',MType) -> set_decl x (mctx',MSort) >>= fun () -> return []
             | (_,MSort) -> return []
             | (mctx',MTyped _) -> expected_type sg mctx t >>= fun ty' ->
@@ -469,7 +469,7 @@ let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin mat
   | App (Extra (_,Pretyped,_) as m,a,args) -> return (m,a::args)
   | _ -> zero Not_Applicable
   end >>= fun (m,args) -> match m with
-  | Extra (lc,Pretyped,{meta=(s,n,ts)}) -> begin match Opt.fold (fun vl -> function | (_,DB (_,_,n)) -> Some (n::vl) | _ -> None) [] ts with
+  | Extra (lc,Pretyped,Meta(s,n,ts)) -> begin match Opt.fold (fun vl -> function | (_,DB (_,_,n)) -> Some (n::vl) | _ -> None) [] ts with
     | Some ts_var -> begin match Opt.fold (fun vl -> function | DB (_,_,n) -> Some (n::vl) | _ -> None) [] args with
       | Some args_var -> return (lc,s,n,ts_var,args_var)
       | None -> zero Not_Applicable

@@ -44,7 +44,7 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
     | Extra (lc,Pretyped,{meta=(s,n,ts)}) as mt -> begin match meta_val sigma mt with
         | Some mt' -> aux mt'
-        | None -> assert false (* TODO *)
+        | None -> let open Typing in raise (TypingError (Not_Inferrable (lc,s)))
         end
     in aux t
 

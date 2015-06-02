@@ -44,7 +44,7 @@ let rec force_ground : 'a term -> typed term = function
   | App (f,a,args) -> mk_App (force_ground f) (force_ground a) (List.map force_ground args)
   | Lam (l,x,a,b) -> mk_Lam l x (map_opt force_ground a) (force_ground b)
   | Pi (l,x,a,b) -> mk_Pi l x (force_ground a) (force_ground b)
-  | Extra (l,_,_) -> Errors.fail l "Hole in pattern"
+  | Extra (l,_,_) -> Errors.fail l "Cannot refine in patterns."
 
 let p_of_pp (ctx:ident list) : prepattern -> pattern =
   let rec aux k ctx = function

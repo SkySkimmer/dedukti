@@ -11,8 +11,7 @@ type typing_error =
   | ProductExpected : 'a term*'b context*'c term -> typing_error
   | InexpectedKind : 'a term*'b context -> typing_error
   | DomainFreeLambda of loc
-  | MetaInKernel of loc*ident
-  | InferSortMeta of loc*ident
+  | Not_Inferrable of loc*ident
   | UnknownMeta of loc*ident*int
   | DecomposeDomainFreeLambdas
   | CannotSolveDeferred

@@ -14,6 +14,8 @@ type 'a term = private
   | Pi    of loc*ident*'a term*'a term        (** Pi abstraction *)
   | Extra of loc*'a tkind*'a
 
+and lsubst = (ident*pretyped term) list
+
 and 'a tkind =
   | Untyped : untyped tkind
   | Pretyped : pretyped tkind
@@ -21,7 +23,8 @@ and 'a tkind =
 
 and untyped = U of ident
 and pretyped = 
-  | Meta of ident*int*((ident*(pretyped term)) list)
+  | Meta of ident*int*lsubst
+  | Guard of int*lsubst*pretyped term
 and typed = { exfalso : 'r. 'r }
 
 val get_loc : 'a term -> loc
@@ -37,14 +40,17 @@ val mk_Arrow    : loc -> 'a term -> 'a term -> 'a term
 val mk_Extra    : loc -> 'a tkind -> 'a -> 'a term
 
 val mk_Hole     : loc -> ident -> untyped term
-val mk_Meta     : loc -> ident -> int -> (ident*pretyped term) list -> pretyped term
+val mk_Meta     : loc -> ident -> int -> lsubst -> pretyped term
+val mk_Guard    : loc -> int -> lsubst -> pretyped term -> pretyped term
 
 val lift_term : typed term -> 'a term
 
 (* Syntactic equality / Alpha-equivalence *)
 val term_eq : 'a term -> 'a term -> bool
+val lsubst_eq : lsubst -> lsubst -> bool
 
 val pp_term     : out_channel -> 'a term -> unit
+val pp_lsubst   : out_channel -> lsubst  -> unit
 
 (** {2 Contexts} *)
 

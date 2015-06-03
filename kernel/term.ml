@@ -12,6 +12,8 @@ type 'a term =
   | Pi    of loc*ident*'a term*'a term        (* Pi abstraction *)
   | Extra of loc*'a tkind*'a
 
+and lsubst = (ident*pretyped term) list
+
 and 'a tkind =
   | Untyped : untyped tkind
   | Pretyped : pretyped tkind
@@ -19,7 +21,8 @@ and 'a tkind =
 
 and untyped = U of ident
 and pretyped = 
-  | Meta of ident*int*((ident*(pretyped term)) list)
+  | Meta of ident*int*lsubst
+  | Guard of int*lsubst*pretyped term
 and typed = { exfalso : 'r. 'r }
 
 
@@ -41,6 +44,7 @@ let mk_Extra l kind ex       = Extra (l,kind,ex)
 
 let mk_Hole lc s = Extra (lc,Untyped,U s)
 let mk_Meta lc s n ts = Extra (lc,Pretyped,Meta(s,n,ts))
+let mk_Guard lc n ts t = Extra (lc,Pretyped,Guard(n,ts,t))
 
 let mk_App f a1 args =
   match f with
@@ -69,10 +73,15 @@ let rec term_eq : type a. a term -> a term -> bool = fun t1 t2 ->
     | Pi (_,_,a,b), Pi (_,_,a',b') -> term_eq a a' && term_eq b b'
     | Extra (_,Untyped,_), Extra (_,Untyped,_) -> true
     | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when (n=n') ->
-        (try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
-         with | Invalid_argument _ -> false)
+        lsubst_eq ts ts'
+    | Extra (_,Pretyped,Guard(n,ls,t)), Extra (_,Pretyped,Guard(n',ls',t')) when (n=n') ->
+        lsubst_eq ls ls' && term_eq t t'
     | Extra (_,Typed,ex), Extra (_,Typed,_) -> ex.exfalso
     | _, _  -> false
+
+and lsubst_eq : lsubst -> lsubst -> bool = fun ls ls' ->
+  try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ls ls'
+  with | Invalid_argument _ -> false
 
 let rec pp_term : type a. _ -> a term -> unit = fun out -> function
   | Kind               -> output_string out "Kind"
@@ -86,10 +95,13 @@ let rec pp_term : type a. _ -> a term -> unit = fun out -> function
   | Extra (_,Untyped,U s) when (ident_eq s empty) -> Printf.fprintf out "?"
   | Extra (_,Untyped,U s) -> Printf.fprintf out "?{\"%a\"}" pp_ident s
   | Extra (_,Pretyped,Meta(s,n,ts)) when (ident_eq s empty) ->
-      Printf.fprintf out "?_%i[%a]" n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+      Printf.fprintf out "?_%i%a" n pp_lsubst ts
   | Extra (_,Pretyped,Meta(s,n,ts)) ->
-      Printf.fprintf out "?{\"%a\"}_%i[%a]" pp_ident s n (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ts
+      Printf.fprintf out "?{\"%a\"}_%i%a" pp_ident s n pp_lsubst ts
+  | Extra (_,Pretyped,Guard(n,ls,t)) -> Printf.fprintf out "#%i%a %a" n pp_lsubst ls pp_term_wp t
   | Extra (_,Typed,ex) -> ex.exfalso
+
+and pp_lsubst out ls = Printf.fprintf out "[%a]" (pp_list ";" (fun out (x,t) -> Printf.fprintf out "%a/%a" pp_ident x pp_term t)) ls
 
 and pp_term_wp : type a. _ -> a term -> unit = fun out -> function
   | Kind | Type _ | DB _ | Const _ | Extra _ as t -> pp_term out t

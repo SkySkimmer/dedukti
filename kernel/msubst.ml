@@ -30,6 +30,7 @@ let apply (sigma:t) (t:pretyped term) : pretyped term =
         | Some mt' -> aux mt'
         | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
         end
+    | Extra (lc,Pretyped,Guard(n,ls,t)) -> mk_Guard lc n (List.map (fun (x,t) -> x,aux t) ls) (aux t)
   in if IntMap.is_empty sigma then t else aux t
 
 let to_ground (sigma:t) (t:pretyped term) : typed term =
@@ -49,11 +50,11 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     in aux t
 
 let rec whnf sg sigma t = match Reduction.whnf sg t with
-  | Extra (_,Pretyped,_) as mt -> begin match meta_val sigma mt with
+  | Extra (_,Pretyped,Meta _) as mt -> begin match meta_val sigma mt with
       | Some mt' -> whnf sg sigma mt'
       | None -> mt
       end
-  | App (Extra (_,Pretyped,_) as mt, a, al) as t0 -> begin match meta_val sigma mt with
+  | App (Extra (_,Pretyped,Meta _) as mt, a, al) as t0 -> begin match meta_val sigma mt with
       | Some mt' -> whnf sg sigma (mk_App mt' a al)
       | None -> t0
       end

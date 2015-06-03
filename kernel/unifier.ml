@@ -10,7 +10,7 @@ open Typing
 let meta_fo side (_,lop,rop) =
   let op = match side with | LEFT -> lop | RIGHT -> rop in
   match op with
-    | App (Extra (_,Pretyped,_), _, args) -> split_app (1+List.length args)
+    | App (Extra (_,Pretyped,Meta _), _, args) -> split_app (1+List.length args)
     | _ -> zero Not_Applicable
 
 (** meta-deldeps *)

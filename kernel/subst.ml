@@ -9,6 +9,7 @@ let rec apply_db : type a. (int -> a term -> a term) -> int -> a term -> a term 
   | Pi (lc,x,a,b) -> mk_Pi lc x (apply_db aux q a) (apply_db aux (q+1) b)
   | Extra (_,Untyped,_) as t -> t
   | Extra (lc,Pretyped,Meta(s,n,ts)) -> mk_Meta lc s n (List.map (fun (x,t) -> x,apply_db aux q t) ts)
+  | Extra (lc,Pretyped,Guard(n,ls,t)) -> mk_Guard lc n (List.map (fun (x,t) -> x,apply_db aux q t) ls) (apply_db aux q t)
   | Extra (_,Typed,ex) -> ex.exfalso
 
 let rec shift_rec (r:int) (k:int) (t:'a term) = apply_db (fun k -> function
@@ -70,6 +71,7 @@ struct
       | Pi (_,_,a,b) -> aux q a || aux (q+1) b
       | Extra (_,Untyped,_) -> false
       | Extra (_,Pretyped,Meta(_,_,ts)) -> List.exists (fun (_,t) -> aux q t) ts
+      | Extra (_,Pretyped,Guard(_,ls,t)) -> List.exists (fun (_,t) -> aux q t) ls || aux q t
       | Extra (_,Typed,ex) -> ex.exfalso
     in aux 0 te
 

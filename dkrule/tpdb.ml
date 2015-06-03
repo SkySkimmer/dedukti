@@ -26,7 +26,7 @@ let rec pp_term k out = function
       ( List.iter (fun _ -> fprintf out "#APP(" ) (a::args);
         pp_term k out f ;
         List.iter ( fprintf out ",%a)" (pp_term k) ) (a::args) )
-  | Kind | Type _ | Hole _ | Meta _ -> assert false
+  | Kind | Type _ | Extra _ -> assert false
 
 let pp_rule out r =
   let pat = (Pattern (r.l,r.md,r.id,r.args)) in

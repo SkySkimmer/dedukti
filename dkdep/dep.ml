@@ -19,13 +19,14 @@ let mk_prelude _ prelude_name =
   deps := [];
   name := string_of_ident prelude_name
 
-let rec mk_term = function
-  | Kind | Type _ | DB _ | Hole _ | Meta _ -> () (* Since we haven't computed metas are clean *)
+let rec mk_term : type a. a term -> unit = function
+  | Kind | Type _ | DB _ -> ()
   | Const (_,md,_) -> add_dep md
   | App (f,a,args) -> List.iter mk_term (f::a::args)
   | Lam (_,_,None,te) -> mk_term te
   | Lam (_,_,Some a,b)
   | Pi (_,_,a,b) -> ( mk_term a; mk_term b )
+  | Extra _ -> ()
 
 
 let rec mk_pattern = function

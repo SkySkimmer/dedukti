@@ -211,11 +211,11 @@ let pair_convertible sg = pair_modify (fun (ctx,lop,rop) ->
 
 (* Tries to unfold the meta at the head of the left (resp right) term *)
 let meta_delta side = pair_modify_side side (fun t -> get >>= fun pb -> match t with
-  | Extra (_,Pretyped,_) as m -> begin match S.meta_val pb.sigma m with
+  | Extra (_,Pretyped,Meta _) as m -> begin match S.meta_val pb.sigma m with
       | Some m' -> return m'
       | None -> zero Not_Applicable
       end
-  | App (Extra (_,Pretyped,_) as m,a,args) -> begin match S.meta_val pb.sigma m with
+  | App (Extra (_,Pretyped,Meta _) as m,a,args) -> begin match S.meta_val pb.sigma m with
       | Some m' -> return (mk_App m' a args)
       | None -> zero Not_Applicable
       end
@@ -251,6 +251,8 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
   | Pi (_,x,a,b), Pi (_,_,a',b') -> return [(ctx,a,a');((dloc,x,a)::ctx,b,b')]
   | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when ( n==n' ) ->
       return (List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts')
+  | Extra (_,Pretyped,Guard(n,ts,t)), Extra (_,Pretyped,Guard(n',ts',t')) when ( n==n' ) ->
+      return ((ctx,t,t')::(List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts'))
   | App _, _ | _, App _ | Extra _, _ | _, Extra _ -> zero Not_Applicable
   | Const _, _ | _, Const _ -> zero Not_Applicable
   | _, _ -> zero Not_Unifiable

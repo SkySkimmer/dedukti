@@ -62,6 +62,7 @@ let fail_typing_error err =
           fail lc "Cannot infer the type of domain-free lambda."
       | Not_Inferrable (lc,s) -> fail lc "Could not infer ?{\"%a\"}: no constraints remaining." pp_ident s
       | UnknownMeta (lc,s,n) -> fail lc "Unknown meta ?_%i{\"%a\"} encountered." n pp_ident s
+      | UnknownGuard (lc,n) -> fail lc "Unknown guard #%i encountered." n
       | DecomposeDomainFreeLambdas -> fail dloc "Cannot decompose a pair of domain free lambdas."
       | CannotSolveDeferred -> fail dloc "Cannot solve deferred constraints."
       | Not_Unifiable -> fail dloc "Non unifiable pair hit."

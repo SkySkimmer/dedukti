@@ -30,6 +30,11 @@ val add_pair : Signature.t -> pair -> unit t
 
 val add_sort_pair : Signature.t -> pcontext -> pterm -> unit t
 
+(*
+[add_cast sg lc ctx a b t] casts t of type a to type b by adding a guard
+*)
+val add_cast : Signature.t -> loc -> pcontext -> pterm -> pterm -> pterm -> pterm t
+
 val new_meta : pcontext -> loc -> ident -> mkind -> pterm t
 
 val meta_constraint : loc -> ident -> int -> (pcontext*pterm) t

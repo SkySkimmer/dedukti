@@ -15,6 +15,10 @@ let meta_add (sigma,guards:t) (n:int) (t:pretyped term) : t =
   assert ( not ( IntMap.mem n sigma ) );
   IntMap.add n t sigma,guards
 
+let guard_mem (_,guards:t) n = IntSet.mem n guards
+
+let guard_add (sigma,guards) n = sigma,IntSet.add n guards
+
 let extra_val (sigma,guards:t) : pretyped -> pretyped term option = function
   | Meta(_,n,ts) -> begin
     try let te0 = IntMap.find n sigma in

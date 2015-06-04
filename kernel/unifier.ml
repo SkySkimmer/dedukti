@@ -3,6 +3,11 @@ open Term
 open Unif_core
 open Typing
 
+type pextra = untyped
+type extra = pretyped
+type ctx = pretyped context
+type jdg = pretyped context*pretyped term*pretyped term
+
 (** Rules *)
 
 (** meta-fo *)
@@ -61,6 +66,12 @@ let rec solve sg = normalize >> (*effectful (fun () -> Printf.printf "Solve step
   inspect >>= function
   | Some p -> solve_pair sg p >>= fun () -> solve sg
   | None -> return ()
+
+let cast sg (ctx,te,ty) (_,ty_exp,_) = if Reduction.are_convertible sg ty ty_exp
+  then return (ctx,te,ty_exp)
+  else add_cast sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
+    plus (once (solve sg) >> return (ctx,te',ty_exp))
+         (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e)
 
 let unify sg ctx t1 t2 = if Reduction.are_convertible sg t1 t2
   then return true

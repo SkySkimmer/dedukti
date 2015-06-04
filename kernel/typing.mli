@@ -66,6 +66,8 @@ module type Meta = sig
 
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
+  (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)
+  val cast : Signature.t -> jdg -> jdg -> jdg t
   val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
   val unify_sort : Signature.t -> ctx -> extra term -> bool t
 

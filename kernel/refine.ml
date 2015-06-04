@@ -20,11 +20,6 @@ end = struct
   include Unif_core
   include Unifier
 
-  type pextra = untyped
-  type extra = pretyped
-  type ctx = pretyped context
-  type jdg = pretyped context*pretyped term*pretyped term
-  
   let get_type ctx l x n =
     try
       let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty

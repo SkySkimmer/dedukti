@@ -166,6 +166,7 @@ module type Meta = sig
 
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
+  val cast : Signature.t -> jdg -> jdg -> jdg t
   val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
   val unify_sort : Signature.t -> ctx -> extra term -> bool t
 
@@ -201,6 +202,10 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
   
   let ctx_add _ = Context.add
   let unsafe_add = Context.unsafe_add
+  
+  let cast sg {ctx=ctx; te=te; ty=ty;} {te=ty_exp} =
+    if Reduction.are_convertible sg ty ty_exp then {ctx=ctx; te=te; ty=ty_exp;}
+    else fail (ConvertibilityError (te,Context.to_context ctx,ty_exp,ty))
   
   let unify sg ctx t u = Reduction.are_convertible sg t u
 

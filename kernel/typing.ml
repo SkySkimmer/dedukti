@@ -288,16 +288,15 @@ module Elaboration (M:Meta) = struct
             then M.return (judge ctx (jdg_te jte) ty_exp)
             else fail (ConvertibilityError (te,M.to_context ctx,ty_exp,jdg_ty jte))
 
-  and check_app sg jdg_f consumed_te consumed_ty args = 
-    match args with
-      | [] -> M.return jdg_f
-      | u::atl -> let ctx = jdg_ctx jdg_f and te = jdg_te jdg_f and ty = jdg_ty jdg_f in
-        begin M.pi sg ctx ty >>= function
-          | Some (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
-              check_app sg (judge ctx (mk_App te (jdg_te u_inf) []) (Subst.subst b (jdg_te u_inf)))
-                           ((jdg_te u_inf)::consumed_te) (a::consumed_ty) atl
-          | None -> fail (ProductExpected (te,M.to_context ctx,ty))
-          end
+  and check_app sg jdg_f consumed_te consumed_ty = function
+    | [] -> M.return jdg_f
+    | u::atl -> let ctx = jdg_ctx jdg_f and te = jdg_te jdg_f and ty = jdg_ty jdg_f in
+      begin M.pi sg ctx ty >>= function
+        | Some (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
+            check_app sg (judge ctx (mk_App te (jdg_te u_inf) []) (Subst.subst b (jdg_te u_inf)))
+                         ((jdg_te u_inf)::consumed_te) (a::consumed_ty) atl
+        | None -> fail (ProductExpected (te,M.to_context ctx,ty))
+        end
 
 end
 

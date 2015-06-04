@@ -218,6 +218,7 @@ and snf : type a. _ -> a term -> a term = fun sg t ->
     | Lam (_,x,a,b)       -> mk_Lam dloc x None (snf sg b)
     | Extra (_,Untyped,_) as t' -> t'
     | Extra (lc,Pretyped,Meta(s,n,ts)) -> mk_Meta lc s n (List.map (fun (x,t) -> x,snf sg t) ts)
+    | Extra (lc,Pretyped,Guard(n,ts,t)) -> mk_Guard lc n (List.map (fun (x,t) -> x,snf sg t) ts) (snf sg t)
     | Extra (_,Typed,ex) -> ex.exfalso
 
 and are_convertible_lst : type a. _ -> (a term*a term) list -> bool = fun sg -> function

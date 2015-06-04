@@ -22,6 +22,8 @@ let permute (dbs:int LList.t) (te:'a term) : 'a term =
     | Extra (_,Untyped,_) as t -> t
     | Extra (l,Pretyped,Meta(s,n,ts)) ->
         mk_Meta l s n (List.map (fun (x,t) -> x,aux k t) ts)
+    | Extra (l,Pretyped,Guard(n,ts,t)) ->
+        mk_Guard l n (List.map (fun (x,t) -> x,aux k t) ts) (aux k t)
     | Extra (_,Typed,ex) -> ex.exfalso
   in aux 0 te
 

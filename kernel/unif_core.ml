@@ -294,6 +294,11 @@ let rec sanitize_term sigma l = function
                               [] (List.rev ts) >>= fun ts ->
           Some (mk_Meta lc s n ts))
       end
+  | Extra(lc,Pretyped,Guard(n,ts,t)) ->
+      Opt.(Opt.fold (fun ts' (x,t) -> map_opt (fun t' -> (x,t')::ts') (sanitize_term sigma l t))
+                    [] (List.rev ts) >>= fun ts' ->
+      sanitize_term sigma l t >>= fun t' ->
+      Some (mk_Guard lc n ts' t'))
 
 let rec sanitize_context s l ctx = match l,ctx with
   | b::l, (lc,x,ty)::ctx -> let (l,ctx) = sanitize_context s l ctx in
@@ -410,6 +415,10 @@ let rec invert_term x vars q = function
         if clean then return (mk_Meta lc s y (List.rev_map (function | Some x -> x | None -> assert false) ts'))
         else prune lc s y (List.rev ts')
     end
+  | Extra (lc,Pretyped,Guard(n,ts,t)) -> (* TODO: maybe prune *)
+      fold (fun l (y,t) -> invert_term x vars q t >>= fun t' -> return ((y,t')::l)) [] (List.rev ts) >>= fun ts' ->
+      invert_term x vars q t >>= fun t' ->
+      return (mk_Guard lc n ts' t')
 
 let rec invert_add_lambdas ctx x argn varl t = if argn = 0 then return t
   else match varl with
@@ -423,12 +432,14 @@ let invert ctx x ts_var args_var t =
   invert_term x varl 0 t >>= fun t' ->
   invert_add_lambdas ctx x argn varl t'
 
+(* TODO: instead of (x=y) check if x appears in y's definition *)
 let rec meta_occurs x = function
   | Kind | Type _ | DB _ | Const _ -> false
   | App (f,a,args) -> List.exists (meta_occurs x) (f::a::args)
   | Lam (_,_,Some a,b) | Pi (_,_,a,b) -> meta_occurs x a || meta_occurs x b
   | Lam (_,_,None,b) -> meta_occurs x b
   | Extra (_,Pretyped,Meta(_,y,ts)) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
+  | Extra (_,Pretyped,Guard(_,ts,t)) -> List.exists (fun (_,t) -> meta_occurs x t) ts || meta_occurs x t
 
 (* m is a meta whose type or kind must be the same as that of t *)
 let meta_set_ensure_type sg lc s n t =
@@ -489,10 +500,6 @@ let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin mat
 split_app and helpers
 *)
 
-(*
-[split_at n l] returns Some(l1,l2) such that |l1|=n and l=l1++l2 if possible
-(TODO: remove duplication with list_slice)
-*)
 let list_slice n l = let rec aux n acc = fun l -> if n=0 then Some (List.rev acc,l) else match l with
   | x::l -> aux (n-1) (x::acc) l
   | [] -> None

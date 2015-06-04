@@ -75,10 +75,14 @@ let rec print_term : type a. _ -> a term -> unit = fun out -> function
   | Extra (_,Untyped,U s) when (ident_eq s empty) -> Format.pp_print_string out "?"
   | Extra (_,Untyped,U s) -> Format.fprintf out "?{\"%a\"}" print_ident s
   | Extra (_,Pretyped,Meta(s,n,ts)) when (ident_eq s empty) ->
-      Format.fprintf out "?_%i[%a]" n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+      Format.fprintf out "?_%i%a" n print_lsubst ts
   | Extra (_,Pretyped,Meta(s,n,ts)) ->
-      Format.fprintf out "?{\"%a\"}_%i[%a]" print_ident s n (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ts
+      Format.fprintf out "?{\"%a\"}_%i%a" print_ident s n print_lsubst ts
+  | Extra (_,Pretyped,Guard(n,ts,t)) ->
+      Format.fprintf out "#%i%a %a" n print_lsubst ts print_term_wp t
   | Extra (_,Typed,ex) -> ex.exfalso
+
+and print_lsubst out ls = Format.fprintf out "[%a]" (print_list ";" (fun out (x,t) -> Format.fprintf out "%a/%a" print_ident x print_term t)) ls
 
 and print_term_wp : type a. _ -> a term -> unit = fun out -> function
   | Kind | Type _ | DB _ | Const _ | Extra _ as t -> print_term out t

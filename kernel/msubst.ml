@@ -47,6 +47,7 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
         | Some mt' -> aux mt'
         | None -> let open Typing in raise (TypingError (Not_Inferrable (lc,s)))
         end
+    | Extra (lc,Pretyped,Guard(n,ts,t)) -> failwith "Not Implemented: Msubst.to_ground on guard."
     in aux t
 
 let rec whnf sg sigma t = match Reduction.whnf sg t with

@@ -1,23 +1,29 @@
 open Basics
 open Term
 
-type t = pretyped term IntMap.t
-
-let identity = IntMap.empty
-
 let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
 
-let meta_raw (sigma:t) n = try Some (IntMap.find n sigma) with | Not_found -> None
+type t = pretyped term IntMap.t*IntSet.t
 
-let meta_val (sigma:t) : pretyped term -> pretyped term option = function
-  | Extra (_,Pretyped,Meta(_,n,ts)) -> begin
+let identity = IntMap.empty,IntSet.empty
+
+let is_identity (sigma,guards) = IntMap.is_empty sigma && IntSet.is_empty guards
+
+let meta_mem (sigma,_) n = IntMap.mem n sigma
+
+let meta_add (sigma,guards:t) (n:int) (t:pretyped term) : t =
+  assert ( not ( IntMap.mem n sigma ) );
+  IntMap.add n t sigma,guards
+
+let extra_val (sigma,guards:t) : pretyped -> pretyped term option = function
+  | Meta(_,n,ts) -> begin
     try let te0 = IntMap.find n sigma in
       let subst1 = List.map snd ts in
       let te = subst_l subst1 0 te0 in
       Some te
     with | Not_found -> None
     end
-  | _ -> None
+  | Guard(n,_,t) -> if IntSet.mem n guards then Some t else None
 
 let apply (sigma:t) (t:pretyped term) : pretyped term =
   let rec aux = function
@@ -26,12 +32,14 @@ let apply (sigma:t) (t:pretyped term) : pretyped term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,Pretyped,Meta(s,n,ts)) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,ex) -> begin match extra_val sigma ex with
         | Some mt' -> aux mt'
-        | None -> mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
+        | None -> begin match ex with
+            | Meta (s,n,ts) -> mk_Meta lc s n (List.map (fun (x,t) -> x,aux t) ts)
+            | Guard (n,ls,t) -> mk_Guard lc n (List.map (fun (x,t) -> x,aux t) ls) (aux t)
+            end
         end
-    | Extra (lc,Pretyped,Guard(n,ls,t)) -> mk_Guard lc n (List.map (fun (x,t) -> x,aux t) ls) (aux t)
-  in if IntMap.is_empty sigma then t else aux t
+  in if is_identity sigma then t else aux t
 
 let to_ground (sigma:t) (t:pretyped term) : typed term =
   let rec aux : pretyped term -> typed term = function
@@ -43,34 +51,33 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     | Lam (l,x,Some a,te) -> mk_Lam l x (Some (aux a)) (aux te)
     | Lam (l,x,None,te) -> mk_Lam l x None (aux te)
     | Pi (l,x,a,b) -> mk_Pi l x (aux a) (aux b)
-    | Extra (lc,Pretyped,Meta(s,n,ts)) as mt -> begin match meta_val sigma mt with
+    | Extra (lc,Pretyped,ex) -> begin match extra_val sigma ex with
         | Some mt' -> aux mt'
-        | None -> let open Typing in raise (TypingError (Not_Inferrable (lc,s)))
+        | None -> let open Typing in begin match ex with
+            | Meta (s,_,_) -> raise (TypingError (Not_Inferrable (lc,s)))
+            | Guard _ -> failwith "TODO: error for to_ground on non passthrough guard"
+            end
         end
-    | Extra (lc,Pretyped,Guard(n,ts,t)) -> failwith "Not Implemented: Msubst.to_ground on guard."
     in aux t
 
 let rec whnf sg sigma t = match Reduction.whnf sg t with
-  | Extra (_,Pretyped,Meta _) as mt -> begin match meta_val sigma mt with
+  | Extra (_,Pretyped,ex) as mt -> begin match extra_val sigma ex with
       | Some mt' -> whnf sg sigma mt'
       | None -> mt
       end
-  | App (Extra (_,Pretyped,Meta _) as mt, a, al) as t0 -> begin match meta_val sigma mt with
+  | App (Extra (_,Pretyped,ex), a, al) as t0 -> begin match extra_val sigma ex with
       | Some mt' -> whnf sg sigma (mk_App mt' a al)
       | None -> t0
       end
   | t0 -> t0
 
-let mem sigma n = IntMap.mem n sigma
+let normalize sigma = IntMap.map (apply sigma) (fst sigma),snd sigma
 
-let add (sigma:t) (n:int) (t:pretyped term) : t =
-  assert ( not ( IntMap.mem n sigma ) );
-  IntMap.add n t sigma
-
-let normalize sigma = IntMap.map (apply sigma) sigma
-
-let pp out sigma =
+let pp out (sigma,guards) =
   IntMap.iter
     (fun i t -> Printf.fprintf out "( ?_%i |-> %a )\n" i pp_term t)
-    sigma
+    sigma;
+  IntSet.iter
+    (fun i -> Printf.fprintf out "( #%i x |-> x )\n" i)
+    guards
 

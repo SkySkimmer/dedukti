@@ -15,11 +15,6 @@ let meta_fo side (_,lop,rop) =
 
 (** meta-deldeps *)
 
-module IntSet = Set.Make(struct
-  type t = int
-  let compare = compare
-end)
-
 let filter_unique_vars subst args =
   let avars = List.fold_left (fun s t -> match t with | DB (_,_,n) -> IntSet.add n s | _ -> s) IntSet.empty args in
   let rec aux clean acc = function

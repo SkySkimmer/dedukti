@@ -1,6 +1,7 @@
 (** Basic Datatypes *)
 
 module IntMap : Map.S with type key = int
+module IntSet : Set.S with type elt = int
 
 (** {2 Identifiers (hashconsed strings)} *)
 (** Internal representation of identifiers as hashconsed strings. *)

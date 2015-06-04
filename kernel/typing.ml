@@ -13,6 +13,7 @@ type typing_error =
   | DomainFreeLambda of loc
   | Not_Inferrable of loc*ident
   | UnknownMeta of loc*ident*int
+  | UnknownGuard of loc*int
   | DecomposeDomainFreeLambdas
   | CannotSolveDeferred
   | Not_Unifiable

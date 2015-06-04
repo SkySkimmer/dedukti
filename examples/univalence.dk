@@ -8,7 +8,7 @@ type_t : type.
 [] U type_t --> type.
 
 (; compare functions ;)
-forall : A : ? -> B : (U ?{"A"} -> type) -> type.
+forall : A : ? -> B : (U A -> type) -> type.
 [A : type, B : (U A -> type)] U (forall A B) --> a : U A -> U (B a).
 
 fun (A : ?) (B : ?) : type := forall A (a => B).

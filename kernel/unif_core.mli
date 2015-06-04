@@ -38,12 +38,6 @@ val meta_decl : loc -> ident -> int -> (pcontext*mkind) t
 
 val whnf : Signature.t -> pterm -> pterm t
 
-(*
-This is only used before the pseudo-unification step of pattern checking.
-TODO(future work): If possible we would like to use unification instead.
-*)
-val simpl : pterm -> pterm t
-
 val normalize : unit t
 
 

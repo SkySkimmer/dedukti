@@ -69,8 +69,6 @@ module type Meta = sig
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
-
-  val simpl : extra term -> extra term t
 end
 
 (** {2 Type Inference/Checking} *)

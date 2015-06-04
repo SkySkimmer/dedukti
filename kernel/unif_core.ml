@@ -111,12 +111,6 @@ let meta_constraint lc s n = meta_decl lc s n >>= function
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)
 
-(*
-This is only used in the pseudo-unification step of pattern checking.
-TODO(future work): If possible we would like to use unification instead.
-*)
-let simpl t = get >>= fun pb -> return (apply pb t)
-
 let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
   let d = IntMap.map (fun (ctx,ty) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, mkind_map (S.apply s) ty)) pb.decls in
   let p = List.map (fun (ctx,t1,t2) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2)) pb.pairs in

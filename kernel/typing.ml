@@ -169,8 +169,6 @@ module type Meta = sig
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
-
-  val simpl : extra term -> extra term t
 end
 
 module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra = typed and type ctx = Context.t and type jdg = judgment

@@ -303,58 +303,51 @@ end
 
 module Checker = Elaboration(KMeta)
 
-  (* ********************** PATTERNS *)
-module Patterns = struct
-  open KMeta
-  open Checker
+(* ********************** PATTERNS *)
+let rec infer_pattern sg (ctx:Context.t) (q:int) (sigma:typed SS.t) (pat:pattern) : typed term*typed SS.t =
+  match pat with
+  | Pattern (l,md,id,args) ->
+    let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
+      (mk_Const l md id,SS.apply sigma (Signature.get_type sg l md id) q,sigma) args
+    in (ty,si)
+  | Var (l,x,n,args) ->
+    let (_,ty,si) = List.fold_left (infer_pattern_aux sg ctx q)
+      (mk_DB l x n,SS.apply sigma (Context.get_type ctx l x n) q,sigma) args
+    in (ty,si)
+  | Brackets t -> ( (Checker.infer sg ctx t).ty, SS.identity )
+  | Lambda (l,x,p) -> raise (TypingError (DomainFreeLambda l))
 
-  let rec infer_pattern sg (ctx:ctx) (q:int) (sigma:typed SS.t) (pat:pattern) : (typed term*typed SS.t) t =
-    match pat with
-    | Pattern (l,md,id,args) ->
-      fold (infer_pattern_aux sg ctx q)
-        (mk_Const l md id,SS.apply sigma (Signature.get_type sg l md id) q,sigma) args >>= fun (_,ty,si) ->
-      return (ty,si)
-    | Var (l,x,n,args) ->
-      fold (infer_pattern_aux sg ctx q)
-        (mk_DB l x n,SS.apply sigma (get_type ctx l x n) q,sigma) args >>= fun (_,ty,si) ->
-      return (ty,si)
-    | Brackets t -> infer sg ctx t >>= fun jdg -> return ( jdg_ty jdg, SS.identity )
-    | Lambda (l,x,p) -> fail (DomainFreeLambda l)
+and infer_pattern_aux sg (ctx:Context.t) (q:int) (f,ty_f,sigma0:typed term*typed term*typed SS.t) (arg:pattern) : (typed term*typed term*typed SS.t) =
+  match Reduction.whnf sg ty_f with
+    | Pi (_,_,a,b) ->
+        let sigma = check_pattern sg ctx q a sigma0 arg in
+        let arg' = pattern_to_term arg in
+        let b2 = SS.apply sigma b (q+1) in
+        let arg2 = SS.apply sigma arg' q in
+          ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
+    | _ -> raise (TypingError (ProductExpected (f,Context.to_context ctx,ty_f)))
 
-  and infer_pattern_aux sg (ctx:ctx) (q:int) (f,ty_f,sigma0:typed term*typed term*typed SS.t) (arg:pattern) : (typed term*typed term*typed SS.t) t =
-    pi sg ctx ty_f >>= function
-      | Some (_,_,a,b) ->
-          check_pattern sg ctx q a sigma0 arg >>= fun sigma ->
-          let arg' = pattern_to_term arg in
-          let b2 = SS.apply sigma b (q+1) in
-          let arg2 = SS.apply sigma arg' q in
-          return ( Term.mk_App f arg' [], Subst.subst b2 arg2, sigma )
-      | None -> fail (ProductExpected (f,to_context ctx,ty_f))
-
-  and check_pattern sg (ctx:ctx) (q:int) (exp_ty:typed term) (sigma0:typed SS.t) (pat:pattern) : typed SS.t t =
-    match pat with
-    | Lambda (l,x,p) ->
-        begin
-          pi sg ctx exp_ty >>= function
-            | Some (l,x,a,b) ->
-                let ctx2 = unsafe_add ctx l x a in
-                  check_pattern sg ctx2 (q+1) b sigma0 p
-            | None -> fail (ProductExpected (pattern_to_term pat,to_context ctx,exp_ty))
-        end
-     | Brackets t ->
-       check sg t (judge ctx exp_ty (mk_Type dloc (* (x) *))) >>= fun _ ->
-         return SS.identity
-    | _ ->
-        begin
-          infer_pattern sg ctx q sigma0 pat >>= fun (inf_ty,sigma1) ->
-          simpl exp_ty >>= fun exp_ty ->
-          simpl inf_ty >>= fun inf_ty ->
-            match pseudo_unification sg q exp_ty inf_ty with
-              | None ->
-                fail (ConvertibilityError (pattern_to_term pat,to_context ctx,exp_ty,inf_ty))
-              | Some sigma2 -> return (SS.merge sigma1 sigma2)
-        end
-end
+and check_pattern sg (ctx:Context.t) (q:int) (exp_ty:typed term) (sigma0:typed SS.t) (pat:pattern) : typed SS.t =
+  match pat with
+  | Lambda (l,x,p) ->
+      begin
+        match Reduction.whnf sg exp_ty with
+          | Pi (l,x,a,b) ->
+              let ctx2 = Context.unsafe_add ctx l x a in
+                check_pattern sg ctx2 (q+1) b sigma0 p
+          | _ -> raise (TypingError (ProductExpected (pattern_to_term pat,Context.to_context ctx,exp_ty)))
+      end
+   | Brackets t ->
+     let _ = Checker.check sg t {ctx; te=exp_ty; ty=mk_Type dloc (* (x) *);} in
+       SS.identity
+  | _ ->
+      begin
+        let (inf_ty,sigma1) = infer_pattern sg ctx q sigma0 pat in
+          match pseudo_unification sg q exp_ty inf_ty with
+            | None ->
+              raise (TypingError (ConvertibilityError (pattern_to_term pat,Context.to_context ctx,exp_ty,inf_ty)))
+            | Some sigma2 -> SS.merge sigma1 sigma2
+      end
 
 (* **** REFINE AND CHECK ******************************** *)
 
@@ -369,7 +362,7 @@ let check_rule sg (ctx,le,ri:rule) : unit =
   let ctx =
     List.fold_left (fun ctx (l,id,ty) -> Context.add l id (Checker.infer sg ctx ty) )
       Context.empty (List.rev ctx) in
-  let (ty_inf,sigma) = Patterns.infer_pattern sg ctx 0 SS.identity le in
+  let (ty_inf,sigma) = infer_pattern sg ctx 0 SS.identity le in
   let ri2 =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in

@@ -289,9 +289,7 @@ module Elaboration (M:Meta) = struct
             )
         | _ ->
           infer sg ctx te >>= fun jte ->
-          M.unify sg ctx (jdg_ty jte) ty_exp >>= fun b -> if b
-            then M.return (judge ctx (jdg_te jte) ty_exp)
-            else fail (ConvertibilityError (te,M.to_context ctx,ty_exp,jdg_ty jte))
+          M.cast sg jte jty
 
   and check_app sg jdg_f consumed_te consumed_ty = function
     | [] -> M.return jdg_f

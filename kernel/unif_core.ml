@@ -273,7 +273,11 @@ let inspect = get >>= fun pb -> match Problem.activate_nonempty pb with
 The first pair is popped and used for f's argument.
 NB: UNDEFINED BEHAVIOR if f modifies the active field. *)
 let pair_modify f = get >>= fun pb -> match pb.active with
-  | x,p::rem -> set { pb with active=x,rem } >> f p >>= fun l -> modify (fun pb -> { pb with active=x,List.append l rem })
+  | x,p::rem -> set { pb with active=x,rem } >> f p >>= fun l -> modify (fun pb -> { pb with active=x,List.append l rem }) >>
+      get >>= fun pb -> begin match pb.active with
+        | Some n,[] -> set {pb with sigma=S.guard_add pb.sigma n}
+        | _,_ -> return ()
+        end
   | _ -> zero Not_Applicable
 
 type side = LEFT | RIGHT

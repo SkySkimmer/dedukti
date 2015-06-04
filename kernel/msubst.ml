@@ -58,8 +58,8 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
     | Extra (lc,Pretyped,ex) -> begin match extra_val sigma ex with
         | Some mt' -> aux mt'
         | None -> let open Typing in begin match ex with
-            | Meta (s,_,_) -> raise (TypingError (Not_Inferrable (lc,s)))
-            | Guard _ -> failwith "TODO: error for to_ground on non passthrough guard"
+            | Meta (s,n,_) -> raise (TypingError (Not_Inferrable (lc,s,n)))
+            | Guard (n,_,_) -> raise (TypingError (Remaining_Guard (lc,n)))
             end
         end
     in aux t

@@ -10,7 +10,8 @@ type typing_error =
   | ProductExpected : 'a term*'b context*'c term -> typing_error
   | InexpectedKind : 'a term*'b context -> typing_error
   | DomainFreeLambda of loc
-  | Not_Inferrable of loc*ident
+  | Not_Inferrable of loc*ident*int
+  | Remaining_Guard of loc*int
   | UnknownMeta of loc*ident*int
   | UnknownGuard of loc*int
   | DecomposeDomainFreeLambdas

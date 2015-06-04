@@ -60,7 +60,8 @@ let fail_typing_error err =
             pp_term te pp_context2 ctx
       | DomainFreeLambda lc ->
           fail lc "Cannot infer the type of domain-free lambda."
-      | Not_Inferrable (lc,s) -> fail lc "Could not infer ?{\"%a\"}: no constraints remaining." pp_ident s
+      | Not_Inferrable (lc,s,n) -> fail lc "Could not infer ?_%i{\"%a\"}: no constraints remaining." n pp_ident s
+      | Remaining_Guard (lc,n) -> fail lc "Remaining guard #%i." n
       | UnknownMeta (lc,s,n) -> fail lc "Unknown meta ?_%i{\"%a\"} encountered." n pp_ident s
       | UnknownGuard (lc,n) -> fail lc "Unknown guard #%i encountered." n
       | DecomposeDomainFreeLambdas -> fail dloc "Cannot decompose a pair of domain free lambdas."

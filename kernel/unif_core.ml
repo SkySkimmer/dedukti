@@ -44,6 +44,8 @@ The problem is solved when it contains no pairs.
 
 (*
 NB: if guard #n is active (resp. unguarded pairs are active) then its pairs appear in the active field and not in the gpairs field (resp they appear in the active field and not in the stashed field).
+TODO: decide if it makes sense to stash unguarded unification pairs.
+NB: might be useful for safe retyping. Probably should prohibit stashing active unguarded pairs, but adding some might work?
 *)
 type problem =
  { mcpt:int; gcpt:int
@@ -182,6 +184,13 @@ let raise e = effectful (fun () -> raise e)
 let apply pb t = S.apply pb.sigma t
 let ground pb t = S.to_ground pb.sigma t
 
+(*
+We can catch new pairs in
+- add_pair
+- add_cast
+- pair_modify
+*)
+
 let add_pair sg p = (*effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->*)
   modify (fun pb -> match pb.active with
     | None,l -> {pb with active=None,l@[p]}
@@ -194,7 +203,7 @@ let add_cast sg lc ctx a b t = get >>= fun pb ->
   return t'
 
 let new_meta ctx lc s k = get >>= fun pb -> match k with
-  | MSort -> let mj = mk_Meta lc s pb.mcpt [] in
+  | MSort -> let mj = mk_Meta lc s pb.mcpt [] in (* We can skip the context here since we know it's Type or Kind. Note that metas can become MSort without losing their context. *)
       set { pb with mcpt=pb.mcpt+1; mdecls=IntMap.add pb.mcpt ([],MSort) pb.mdecls } >>
       return mj
   | _ -> let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in

@@ -81,5 +81,5 @@ let unify sg ctx t1 t2 = are_convertible sg t1 t2 >>= function
 let unify_sort sg ctx = function
   | Kind | Type _ -> return true
   | t -> add_sort_pair sg ctx t >>= fun () -> plus (once (solve sg) >>= fun () -> return true)
-                                                (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
+                                                   (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
 

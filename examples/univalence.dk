@@ -15,14 +15,14 @@ fun (A : ?) (B : ?) : type := forall A (a => B).
 
 eq : A : ? -> U A -> U A -> type.
 
-eq_refl : A : ? -> a : U A -> U (eq A a a).
+eq_refl : A : ? -> a : U A -> U (eq ? a a).
 
-`eq_rect : A : ? -> a : U A -> P : (b : U A -> e : U (eq A a b) -> ?) -> U (P a (eq_refl A a)) -> y : U A -> p : U (eq A a y) -> U (P y p).
+`eq_rect : A : ? -> a : ? -> P : (b : U A -> e : U (eq ? a b) -> ?) -> U (P ? (eq_refl ? a)) -> y : U ? -> p : ? -> U (P y p).
 
 [A : type, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
 
-transport (A : type) (P : U A -> type) (x : U A) (y : U A) (e : U (eq A x y)) (H : U (P x)) : U (P y)
- := eq_rect ? x (a : U A => p : U (eq A x a) => P a) H y e.
+transport (A : ?) (P : ?) (x : U A) (y : ?) (e : ?) (H : U (P x)) : U (P y)
+ := eq_rect ? x (a : ? => p : ? => P a) H ? e.
 
 eq_inverse (A : ?) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)
  := transport A (a : ? => eq ? a x) x y p (eq_refl A x).
@@ -188,15 +188,15 @@ funext : A : type -> B : (U A -> type) ->  f : U (forall A B) -> g : U (forall A
  U (eq (forall A B) f g).
 
 
-pr (G : type) : type := forall G (x : U G => eq G x x).
+pr (G : ?) : type := forall ? (x : U G => eq ? x x).
 
-pr_e : U (forall type_t (A : type => forall type_t (B : type => forall (iso A B) (e : U (iso A B) => fun (pr A) (pr B)))))
+pr_e : U (forall type_t (A : ? => forall type_t (B : ? => forall (iso A B) (e : ? => fun (pr A) (pr B)))))
  := A : type => B : type => iso_rect_aux A B (e : U (iso A B) => fun (pr A) (pr B))
    (eq_rect type_t A (B : type => e : U (eq type_t A B) => fun (pr A) (pr B)) (id (pr A)) B).
 
 
-pr_e' : U (forall type_t (A : type => forall type_t (B : type => forall (iso A B) (e : U (iso A B) => fun (pr A) (pr B)))))
- := A : type => B : type => e : U (iso A B) => H : U (pr A) => x : U B =>
+pr_e' : U (forall type_t (A : ? => forall type_t (B : ? => forall ? (e : U (iso A B) => fun (pr A) (pr B)))))
+ := A : ? => B : ? => e : ? => H : U (pr A) => x : U B =>
    transport B (b : U B => eq B b b) (iso_f A B e (iso_g A B e x)) x (iso_Hg A B e x) (ap A B (iso_f A B e) (iso_g A B e x) (iso_g A B e x) (H (iso_g A B e x))).
 
 pr_eq_aux : A : type -> B : type -> e : U (iso A B) -> U (eq (fun (pr A) (pr B)) (pr_e A B e) (pr_e' A B e))

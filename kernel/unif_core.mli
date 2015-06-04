@@ -43,6 +43,8 @@ val meta_decl : loc -> ident -> int -> (pcontext*mkind) t
 
 val whnf : Signature.t -> pterm -> pterm t
 
+val are_convertible : Signature.t -> pterm -> pterm -> bool t
+
 val normalize : unit t
 
 

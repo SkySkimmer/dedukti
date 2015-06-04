@@ -67,16 +67,16 @@ let rec solve sg = normalize >> (*effectful (fun () -> Printf.printf "Solve step
   | Some p -> solve_pair sg p >>= fun () -> solve sg
   | None -> return ()
 
-let cast sg (ctx,te,ty) (_,ty_exp,_) = if Reduction.are_convertible sg ty ty_exp
-  then return (ctx,te,ty_exp)
-  else add_cast sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
-    plus (once (solve sg) >> return (ctx,te',ty_exp))
-         (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e)
+let cast sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
+  | true -> return (ctx,te,ty_exp)
+  | false -> add_cast sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
+      plus (once (solve sg) >> return (ctx,te',ty_exp))
+           (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e)
 
-let unify sg ctx t1 t2 = if Reduction.are_convertible sg t1 t2
-  then return true
-  else add_pair sg (ctx,t1,t2) >>= fun () -> plus (once (solve sg) >> return true)
-                                                  (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
+let unify sg ctx t1 t2 = are_convertible sg t1 t2 >>= function
+  | true -> return true
+  | false -> add_pair sg (ctx,t1,t2) >> plus (once (solve sg) >> return true)
+                                             (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
 
 let unify_sort sg ctx = function
   | Kind | Type _ -> return true

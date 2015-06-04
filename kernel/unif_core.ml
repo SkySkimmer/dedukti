@@ -99,7 +99,7 @@ let pp_mdecls out m = IntMap.iter (fun i d -> pp_mdecl out i d) m
 
 let pp_pair out (ctx,t1,t2) = Printf.fprintf out "%a |- %a == %a\n" pp_context ctx pp_term t1 pp_term t2
 
-let pp_gdecl out n (ctx,a,b) = Printf.fprintf out "%a |- #%i : %a -> %a" pp_context ctx n pp_term a pp_term b
+let pp_gdecl out n (ctx,a,b) = Printf.fprintf out "%a |- #%i : %a --> %a\n" pp_context ctx n pp_term a pp_term b
 
 let pp_gdecls out m = IntMap.iter (fun i d -> pp_gdecl out i d) m
 
@@ -132,7 +132,8 @@ module Problem = struct
     | None,l -> l
     | Some _,_ -> pb.stashed
   
-  let get_gpairs pb lc n = match pb.active with
+  let get_gpairs pb lc n = if S.guard_mem pb.sigma n then []
+  else match pb.active with
     | Some m,l when (n=m) -> l
     | _,_ -> try let (_,l) = List.find (fun (m,_) -> n=m) pb.gpairs in l with | Not_found -> raise (TypingError (UnknownGuard (lc,n)))
   
@@ -194,11 +195,11 @@ let add_cast sg lc ctx a b t = get >>= fun pb ->
 
 let new_meta ctx lc s k = get >>= fun pb -> match k with
   | MSort -> let mj = mk_Meta lc s pb.mcpt [] in
-      set { pb with mcpt=pb.mcpt+1; mdecls=IntMap.add pb.mcpt ([],MSort) pb.mdecls } >>= fun () ->
+      set { pb with mcpt=pb.mcpt+1; mdecls=IntMap.add pb.mcpt ([],MSort) pb.mdecls } >>
       return mj
   | _ -> let substj = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
       let mj = mk_Meta lc s pb.mcpt substj in
-      set { pb with mcpt=pb.mcpt+1; mdecls=IntMap.add pb.mcpt (ctx,k) pb.mdecls } >>= fun () ->
+      set { pb with mcpt=pb.mcpt+1; mdecls=IntMap.add pb.mcpt (ctx,k) pb.mdecls } >>
       return mj
 
 let meta_decl lc s n = get >>= fun pb -> return (Problem.get_mdecl pb lc s n)
@@ -275,7 +276,7 @@ NB: UNDEFINED BEHAVIOR if f modifies the active field. *)
 let pair_modify f = get >>= fun pb -> match pb.active with
   | x,p::rem -> set { pb with active=x,rem } >> f p >>= fun l -> modify (fun pb -> { pb with active=x,List.append l rem }) >>
       get >>= fun pb -> begin match pb.active with
-        | Some n,[] -> set {pb with sigma=S.guard_add pb.sigma n}
+        | Some n,[] -> set {pb with sigma=S.guard_add pb.sigma n; stashed=[]; active=None,pb.stashed} (* #n has no pairs left. *)
         | _,_ -> return ()
         end
   | _ -> zero Not_Applicable

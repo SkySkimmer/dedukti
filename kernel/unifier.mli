@@ -13,5 +13,3 @@ val cast_sort : Signature.t -> jdg -> jdg t
 
 val unify : Signature.t -> pretyped context -> pretyped term -> pretyped term -> bool t
 
-val unify_sort : Signature.t -> pretyped context -> pretyped term -> bool t
-

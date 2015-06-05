@@ -161,7 +161,7 @@ module type Meta = sig
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
-  val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
+  val ctx_add : Signature.t -> loc -> ident -> jdg -> (jdg*ctx) t
   val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
@@ -199,7 +199,7 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
 
   let fold = List.fold_left
   
-  let ctx_add _ = Context.add
+  let ctx_add _ lc x jdg = jdg,Context.add lc x jdg
   let unsafe_add = Context.unsafe_add
   
   let cast sg {ctx=ctx; te=te; ty=ty;} {te=ty_exp} =
@@ -254,12 +254,12 @@ module Elaboration (M:Meta) = struct
         check_app sg jdg_f [] [] (a::args)
     | Pi (l,x,a,b) ->
         infer sg ctx a >>= fun jdg_a ->
-        M.ctx_add sg l x jdg_a >>= fun ctx2 ->
+        M.ctx_add sg l x jdg_a >>= fun (jdg_a,ctx2) ->
         infer sg ctx2 b >>= cast_sort sg >>= fun jdg_b ->
         M.return (judge ctx (mk_Pi l x (jdg_te jdg_a) (jdg_te jdg_b)) (jdg_ty jdg_b))
     | Lam  (l,x,Some a,b) ->
         infer sg ctx a >>= fun jdg_a ->
-        M.ctx_add sg l x jdg_a >>= fun ctx2 ->
+        M.ctx_add sg l x jdg_a >>= fun (jdg_a,ctx2) ->
         infer sg ctx2 b >>= fun jdg_b ->
           ( match jdg_ty jdg_b with (* Needs meta handling. Or we could say that if it's a meta we will error out in kernel mode. *)
               | Kind -> fail (InexpectedKind (jdg_te jdg_b, M.to_context (jdg_ctx jdg_b)))

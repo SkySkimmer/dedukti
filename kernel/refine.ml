@@ -37,13 +37,12 @@ end = struct
 
   let extract sg m = run m
 
-  let unify_annot sg ctx t = if !coc then unify_sort sg ctx t else unify sg ctx t (mk_Type dloc)
+  let cast_annot sg jdg = if !coc then cast_sort sg jdg else let (ctx,_,_) = jdg in cast sg jdg (ctx,mk_Type dloc,mk_Kind)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
 
   let ctx_add sg l x jdg = let ctx0 = jdg_ctx jdg in
-    unify_annot sg ctx0 (jdg_ty jdg) >>= fun b ->
-    if b then return ((l,x,jdg_te jdg)::ctx0)
-    else fail (ConvertibilityError (jdg_te jdg, ctx0, mk_Type dloc, jdg_ty jdg))
+    cast_annot sg jdg >>= fun jdg ->
+    return (jdg,(l,x,jdg_te jdg)::ctx0)
 
   let unsafe_add ctx l x t = (l,x,t)::ctx
 

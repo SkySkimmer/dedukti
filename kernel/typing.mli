@@ -61,7 +61,7 @@ module type Meta = sig
 
   val fold : ('a -> 'b -> 'a t) -> 'a -> 'b list -> 'a t
 
-  val ctx_add : Signature.t -> loc -> ident -> jdg -> ctx t
+  val ctx_add : Signature.t -> loc -> ident -> jdg -> (jdg*ctx) t
   val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t

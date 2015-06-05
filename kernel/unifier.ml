@@ -82,11 +82,6 @@ let cast_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
       plus (once (solve sg) >> return (ctx,te',ms))
            (function | Not_Unifiable -> zero (SortExpected (te, ctx, ty)) | e -> zero e)
 
-let unify sg ctx t1 t2 = are_convertible sg t1 t2 >>= function
-  | true -> return true
-  | false -> add_pair sg (ctx,t1,t2) >> plus (once (solve sg) >> return true)
-                                             (function | Not_Unifiable | Not_Applicable -> return false | e -> zero e)
-
 let reject_kind sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
   | Kind -> zero (InexpectedKind (te, ctx))
   | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint lc s n >>= fun _ -> return ()

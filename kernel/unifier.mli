@@ -11,6 +11,4 @@ val cast : Signature.t -> jdg -> jdg -> jdg t
 
 val cast_sort : Signature.t -> jdg -> jdg t
 
-val unify : Signature.t -> pretyped context -> pretyped term -> pretyped term -> bool t
-
 val reject_kind : Signature.t -> jdg -> unit t

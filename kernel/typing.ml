@@ -257,7 +257,7 @@ module Elaboration (M:Meta) = struct
     | DB (l,x,n) -> M.return (judge ctx (mk_DB l x n) (M.get_type ctx l x n))
     | Const (l,md,id) -> M.return (judge ctx (mk_Const l md id) (lift_term (Signature.get_type sg l md id)))
     | App (f,a,args) -> infer sg ctx f >>= fun jdg_f ->
-        check_app sg jdg_f [] [] (a::args)
+        check_app sg jdg_f (*[] []*) (a::args)
     | Pi (l,x,a,b) ->
         infer sg ctx a >>= fun jdg_a ->
         M.ctx_add sg l x jdg_a >>= fun (jdg_a,ctx2) ->
@@ -290,13 +290,13 @@ module Elaboration (M:Meta) = struct
           infer sg ctx te >>= fun jte ->
           M.cast sg jte jty
 
-  and check_app sg jdg_f consumed_te consumed_ty = function
+  and check_app sg jdg_f (*consumed_te consumed_ty*) = function
     | [] -> M.return jdg_f
     | u::atl -> let ctx = jdg_ctx jdg_f and te = jdg_te jdg_f and ty = jdg_ty jdg_f in
       begin M.pi sg ctx ty >>= function
         | Some (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
             check_app sg (judge ctx (mk_App te (jdg_te u_inf) []) (Subst.subst b (jdg_te u_inf)))
-                         ((jdg_te u_inf)::consumed_te) (a::consumed_ty) atl
+                         (*((jdg_te u_inf)::consumed_te) (a::consumed_ty)*) atl
         | None -> fail (ProductExpected (te,M.to_context ctx,ty))
         end
 

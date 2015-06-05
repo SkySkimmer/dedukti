@@ -45,11 +45,13 @@ let meta_deldeps side (ctx,lop,rop) =
 (** Rule application *)
 
 let first_applicable l = let rec aux = function
+  | [m] -> m
   | m::l -> plus m (function | Not_Applicable -> aux l | e -> zero e)
   | [] -> zero Not_Applicable
   in once (aux l)
 
 let fully_backtracking l = let rec aux = function
+  | [m] -> m
   | m::l -> plus m (fun _ -> aux l)
   | [] -> zero Not_Applicable
   in aux l

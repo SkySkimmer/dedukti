@@ -68,8 +68,8 @@ module type Meta = sig
 
   (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)
   val cast : Signature.t -> jdg -> jdg -> jdg t
-  val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
-  val unify_sort : Signature.t -> ctx -> extra term -> bool t
+  (* If ctx |- te : ty, cast te to some sort s *)
+  val cast_sort : Signature.t -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t

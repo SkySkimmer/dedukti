@@ -167,8 +167,7 @@ module type Meta = sig
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
   val cast : Signature.t -> jdg -> jdg -> jdg t
-  val unify : Signature.t -> ctx -> extra term -> extra term -> bool t
-  val unify_sort : Signature.t -> ctx -> extra term -> bool t
+  val cast_sort : Signature.t -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
@@ -207,11 +206,9 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
     if Reduction.are_convertible sg ty ty_exp then {ctx=ctx; te=te; ty=ty_exp;}
     else fail (ConvertibilityError (te,Context.to_context ctx,ty_exp,ty))
   
-  let unify sg ctx t u = Reduction.are_convertible sg t u
-
-  let unify_sort sg ctx = function
-    | Kind | Type _ -> true
-    | _ -> false
+  let cast_sort sg jdg = match jdg.ty with
+    | Kind | Type _ -> jdg
+    | _ -> fail (SortExpected (jdg.te, to_context jdg.ctx, jdg.ty))
 
   let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
@@ -258,15 +255,13 @@ module Elaboration (M:Meta) = struct
     | Pi (l,x,a,b) ->
         infer sg ctx a >>= fun jdg_a ->
         M.ctx_add sg l x jdg_a >>= fun ctx2 ->
-        infer sg ctx2 b >>= fun jdg_b ->
-        M.unify_sort sg ctx (jdg_ty jdg_b) >>= fun b -> if b
-          then M.return (judge ctx (mk_Pi l x (jdg_te jdg_a) (jdg_te jdg_b)) (jdg_ty jdg_b))
-          else fail (SortExpected (jdg_te jdg_b, M.to_context (jdg_ctx jdg_b), jdg_ty jdg_b))
+        infer sg ctx2 b >>= cast_sort sg >>= fun jdg_b ->
+        M.return (judge ctx (mk_Pi l x (jdg_te jdg_a) (jdg_te jdg_b)) (jdg_ty jdg_b))
     | Lam  (l,x,Some a,b) ->
         infer sg ctx a >>= fun jdg_a ->
         M.ctx_add sg l x jdg_a >>= fun ctx2 ->
         infer sg ctx2 b >>= fun jdg_b ->
-          ( match jdg_ty jdg_b with (* Needs meta handling. Or we could say that if it it's a meta we will error out in kernel mode. *)
+          ( match jdg_ty jdg_b with (* Needs meta handling. Or we could say that if it's a meta we will error out in kernel mode. *)
               | Kind -> fail (InexpectedKind (jdg_te jdg_b, M.to_context (jdg_ctx jdg_b)))
               | _ -> M.return (judge ctx (mk_Lam l x (Some (jdg_te jdg_a)) (jdg_te jdg_b))
                        (mk_Pi l x (jdg_te jdg_a) (jdg_ty jdg_b)))
@@ -277,7 +272,7 @@ module Elaboration (M:Meta) = struct
   and check sg (te:pextra term) (jty:jdg) : jdg t =
     let ty_exp = jdg_te jty in
     let ctx = jdg_ctx jty in
-      match te with (* Maybe do the match on term and type at the same time? In case type is a meta. *)
+      match te with
         | Lam (l,x,None,u) ->
             ( M.pi sg ctx ty_exp >>= function
                 | Some (l,x,a,b) -> let pi = mk_Pi l x a b in

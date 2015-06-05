@@ -73,6 +73,13 @@ let cast sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
       plus (once (solve sg) >> return (ctx,te',ty_exp))
            (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e)
 
+let cast_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
+  | Kind | Type _ -> return jdg
+  | _ -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
+      add_cast sg lc ctx ty ms te >>= fun te' ->
+      plus (once (solve sg) >> return (ctx,te',ms))
+           (function | Not_Unifiable -> zero (SortExpected (te, ctx, ty)) | e -> zero e)
+
 let unify sg ctx t1 t2 = are_convertible sg t1 t2 >>= function
   | true -> return true
   | false -> add_pair sg (ctx,t1,t2) >> plus (once (solve sg) >> return true)

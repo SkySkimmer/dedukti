@@ -64,6 +64,8 @@ module type Meta = sig
   val ctx_add : Signature.t -> loc -> ident -> jdg -> (jdg*ctx) t
   val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
+  val reject_kind : Signature.t -> jdg -> unit t
+
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
   (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)

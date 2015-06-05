@@ -164,6 +164,8 @@ module type Meta = sig
   val ctx_add : Signature.t -> loc -> ident -> jdg -> (jdg*ctx) t
   val unsafe_add : ctx -> loc -> ident -> extra term -> ctx
 
+  val reject_kind : Signature.t -> jdg -> unit t
+
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
   val cast : Signature.t -> jdg -> jdg -> jdg t
@@ -209,6 +211,10 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
   let cast_sort sg jdg = match jdg.ty with
     | Kind | Type _ -> jdg
     | _ -> fail (SortExpected (jdg.te, to_context jdg.ctx, jdg.ty))
+
+  let reject_kind sg jdg = match jdg.ty with
+    | Kind -> fail (InexpectedKind (jdg.te, to_context jdg.ctx))
+    | _ -> ()
 
   let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
@@ -261,11 +267,9 @@ module Elaboration (M:Meta) = struct
         infer sg ctx a >>= fun jdg_a ->
         M.ctx_add sg l x jdg_a >>= fun (jdg_a,ctx2) ->
         infer sg ctx2 b >>= fun jdg_b ->
-          ( match jdg_ty jdg_b with (* Needs meta handling. Or we could say that if it's a meta we will error out in kernel mode. *)
-              | Kind -> fail (InexpectedKind (jdg_te jdg_b, M.to_context (jdg_ctx jdg_b)))
-              | _ -> M.return (judge ctx (mk_Lam l x (Some (jdg_te jdg_a)) (jdg_te jdg_b))
-                       (mk_Pi l x (jdg_te jdg_a) (jdg_ty jdg_b)))
-          )
+        M.reject_kind sg jdg_b >>
+        M.return (judge ctx (mk_Lam l x (Some (jdg_te jdg_a)) (jdg_te jdg_b))
+                            (mk_Pi l x (jdg_te jdg_a) (jdg_ty jdg_b)))
     | Lam  (l,x,None,b) -> fail (DomainFreeLambda l)
     | Extra (l,kind,ex) -> infer_extra infer check sg ctx l kind ex
 

@@ -168,8 +168,6 @@ module type Meta = sig
 
   val whnf : Signature.t -> extra term -> extra term t
 
-  val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
-
   val cast : Signature.t -> jdg -> jdg -> jdg t
   val cast_sort : Signature.t -> jdg -> jdg t
   val cast_app : Signature.t -> jdg -> jdg -> jdg t
@@ -227,10 +225,6 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
     | _ -> ()
 
   let whnf = Reduction.whnf
-
-  let pi sg ctx t = match Reduction.whnf sg t with
-    | Pi (l,x,a,b) -> Some (l,x,a,b)
-    | _ -> None
     
   let infer_extra infer check sg ctx lc kind ex = ex.exfalso
 
@@ -289,18 +283,17 @@ module Elaboration (M:Meta) = struct
     let ty_exp = jdg_te jty in
     let ctx = jdg_ctx jty in
       match te with
-        | Lam (l,x,None,u) ->
-            ( M.pi sg ctx ty_exp >>= function
-                | Some (l,x,a,b) -> let pi = mk_Pi l x a b in
-                    let ctx2 = M.unsafe_add ctx l x a in
-                    (* (x) might as well be Kind but here we do not care*)
-                    check sg u (judge ctx2 b (mk_Type dloc (* (x) *))) >>= fun jdg_b ->
-                      M.return (judge ctx (mk_Lam l x (Some a) (jdg_te jdg_b)) pi)
-                | None -> fail (ProductExpected (te,M.to_context ctx,ty_exp))
-            )
-        | _ ->
-          infer sg ctx te >>= fun jte ->
-          M.cast sg jte jty
+        | Lam (l,x,None,u) -> M.whnf sg ty_exp >>= begin function
+            | Pi (l,x,a,b) as pi ->
+                let ctx2 = M.unsafe_add ctx l x a in
+                (* (x) might as well be Kind but here we do not care*)
+                check sg u (judge ctx2 b (mk_Type dloc (* (x) *))) >>= fun jdg_b ->
+                  M.return (judge ctx (mk_Lam l x (Some a) (jdg_te jdg_b)) pi)
+            | Extra _ | App (Extra _,_,_) -> infer sg ctx te >>= fun jte -> M.cast sg jte jty
+            | _ -> fail (ProductExpected (te,M.to_context ctx,ty_exp))
+            end
+        | _ -> infer sg ctx te >>= fun jte ->
+            M.cast sg jte jty
 
   and check_app sg jdg_f (*consumed_te consumed_ty*) = function
     | [] -> M.return jdg_f

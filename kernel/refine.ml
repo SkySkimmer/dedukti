@@ -46,21 +46,6 @@ end = struct
 
   let unsafe_add ctx l x t = (l,x,t)::ctx
 
-  let pi sg ctx t = whnf sg t >>= function
-    | Pi (l,x,a,b) -> return (Some (l,x,a,b))
-    | _ -> plus (let empty = Basics.empty in
-        new_meta_annot ctx dloc empty >>= fun ms ->
-        new_meta ctx dloc empty (MTyped ms) >>= fun mt ->
-        let ctx2 = (dloc,empty,mt)::ctx in
-        new_meta ctx2 dloc empty MSort >>= fun ml ->
-        new_meta ctx2 dloc empty (MTyped ml) >>= fun mk ->
-        let pi = mk_Pi dloc empty mt mk in
-        unify sg ctx t pi >>= begin function
-        | true -> return (Some (dloc,empty,mt,mk))
-        | false -> zero Not_Unifiable
-        end) (* This backtracking lets us forget newly introduced metavariables. *)
-        (function | Not_Applicable | Not_Unifiable -> return None | e -> zero e)
-
   let cast_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
     whnf sg ty_f >>= function
       | Pi (_,_,a,b) -> cast sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->

@@ -68,8 +68,6 @@ module type Meta = sig
 
   val whnf : Signature.t -> extra term -> extra term t
 
-  val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
-
   (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)
   val cast : Signature.t -> jdg -> jdg -> jdg t
   (* If ctx |- te : ty, cast te to some sort s *)

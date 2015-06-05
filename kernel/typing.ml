@@ -166,10 +166,13 @@ module type Meta = sig
 
   val reject_kind : Signature.t -> jdg -> unit t
 
+  val whnf : Signature.t -> extra term -> extra term t
+
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
   val cast : Signature.t -> jdg -> jdg -> jdg t
   val cast_sort : Signature.t -> jdg -> jdg t
+  val cast_app : Signature.t -> jdg -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
@@ -212,9 +215,18 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
     | Kind | Type _ -> jdg
     | _ -> fail (SortExpected (jdg.te, to_context jdg.ctx, jdg.ty))
 
+  let cast_app sg jdg_f jdg_u = match Reduction.whnf sg jdg_f.ty with
+    | Pi (_,_,a,b) -> if Reduction.are_convertible sg a jdg_u.ty
+        then {ctx=jdg_f.ctx; te=mk_App jdg_f.te jdg_u.te []; ty=Subst.subst b jdg_u.te;}
+        else fail (ConvertibilityError (jdg_u.te,to_context jdg_f.ctx,a,jdg_u.ty))
+    | _ -> fail (ProductExpected (jdg_f.te,to_context jdg_f.ctx,jdg_f.ty))
+
+
   let reject_kind sg jdg = match jdg.ty with
     | Kind -> fail (InexpectedKind (jdg.te, to_context jdg.ctx))
     | _ -> ()
+
+  let whnf = Reduction.whnf
 
   let pi sg ctx t = match Reduction.whnf sg t with
     | Pi (l,x,a,b) -> Some (l,x,a,b)
@@ -293,12 +305,14 @@ module Elaboration (M:Meta) = struct
   and check_app sg jdg_f (*consumed_te consumed_ty*) = function
     | [] -> M.return jdg_f
     | u::atl -> let ctx = jdg_ctx jdg_f and te = jdg_te jdg_f and ty = jdg_ty jdg_f in
-      begin M.pi sg ctx ty >>= function
-        | Some (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
-            check_app sg (judge ctx (mk_App te (jdg_te u_inf) []) (Subst.subst b (jdg_te u_inf)))
-                         (*((jdg_te u_inf)::consumed_te) (a::consumed_ty)*) atl
-        | None -> fail (ProductExpected (te,M.to_context ctx,ty))
-        end
+      begin M.whnf sg ty >>= function
+        | Pi (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
+            cast_app sg jdg_f u_inf
+        | Extra _ | App (Extra _,_,_) -> infer sg ctx u >>= fun jdg_u ->
+            cast_app sg jdg_f jdg_u
+        | _ -> fail (ProductExpected (te,M.to_context ctx,ty))
+        end >>= fun jdg_app ->
+      check_app sg jdg_app atl
 
 end
 

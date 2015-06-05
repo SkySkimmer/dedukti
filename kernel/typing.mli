@@ -66,12 +66,16 @@ module type Meta = sig
 
   val reject_kind : Signature.t -> jdg -> unit t
 
+  val whnf : Signature.t -> extra term -> extra term t
+
   val pi : Signature.t -> ctx -> extra term -> (loc*ident*extra term*extra term) option t
 
   (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)
   val cast : Signature.t -> jdg -> jdg -> jdg t
   (* If ctx |- te : ty, cast te to some sort s *)
   val cast_sort : Signature.t -> jdg -> jdg t
+  (* if ctx |- te : ty1 -> ty2 and ctx |- te' : ty1 then ctx |- te te' : ty2 *)
+  val cast_app : Signature.t -> jdg -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t

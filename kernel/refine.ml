@@ -61,6 +61,18 @@ end = struct
         end) (* This backtracking lets us forget newly introduced metavariables. *)
         (function | Not_Applicable | Not_Unifiable -> return None | e -> zero e)
 
+  let cast_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
+    whnf sg ty_f >>= function
+      | Pi (_,_,a,b) -> cast sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
+          return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
+      | Extra  _ | App (Extra _,_,_) -> let (_,te_u,ty_u) = jdg_u in
+          let ctx2 = (dloc,empty,ty_u)::ctx in
+          new_meta ctx2 dloc empty MSort >>= fun ms ->
+          new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
+          cast sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
+          return (ctx,mk_App te_f te_u [],Subst.subst mk te_u)
+      | _ -> fail (ProductExpected (te_f,ctx,ty_f))
+
   let infer_extra infer check sg ctx lc kind ex = match kind with
     | Untyped -> let U s = ex in
         new_meta ctx lc s MType >>= fun mk ->

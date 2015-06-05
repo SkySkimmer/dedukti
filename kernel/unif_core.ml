@@ -37,23 +37,20 @@ A unification problem is given by:
 - definitions for metavariables
 - type declarations for guards
 - unification pairs associated with guards
-- unification pairs not associated with guards
 A guard is pass-through when there are no pairs associated with it.
 The problem is solved when it contains no pairs.
 *)
 
 (*
-NB: if guard #n is active (resp. unguarded pairs are active) then its pairs appear in the active field and not in the gpairs field (resp they appear in the active field and not in the stashed field).
-TODO: decide if it makes sense to stash unguarded unification pairs.
-NB: might be useful for safe retyping. Probably should prohibit stashing active unguarded pairs, but adding some might work?
+NB: if guard #n is active then its pairs appear in the active field and not in the gpairs field.
+If it has no pairs it appears nowhere.
 *)
 type problem =
  { mcpt:int; gcpt:int
  ; mdecls:mdecl IntMap.t; sigma:S.t
  ; gdecls:gdecl IntMap.t
  ; gpairs:(int*pair list) list
- ; stashed:pair list (* Unification pairs not associated with a guard while we work on some guard. *)
- ; active: int option*pair list (* Unification pairs we are currently working on.*)
+ ; active: (int*pair list) option (* Unification pairs we are currently working on.*)
  ; }
 
 let fresh =
@@ -61,8 +58,7 @@ let fresh =
  ; mdecls=IntMap.empty; sigma=S.identity
  ; gdecls=IntMap.empty
  ; gpairs=[]
- ; stashed=[]
- ; active=None,[]; }
+ ; active=None; }
 
 (* A monad with effects, backtracking and restricted state operations *)
 module Types = struct
@@ -110,13 +106,12 @@ let pp_gpair out (n,l) = Printf.fprintf out "#%i when %a\nEnd #%i." n (pp_list "
 let pp_gpairs = pp_list "\n" pp_gpair
 
 let pp_active out = function
-  | Some n,l -> Printf.fprintf out "ACTIVE: %a\n" pp_gpair (n,l)
-  | None,l -> Printf.fprintf out "ACTIVE: %a\n" (pp_list "" pp_pair) l
+  | None -> ()
+  | Some(n,l) -> Printf.fprintf out "ACTIVE: %a\n" pp_gpair (n,l)
 
-let pp_problem out pb = Printf.fprintf out "{ mcpt=%i; gcpt=%i;\n%a\n%a\n%a\n%a\n%a\n%a\n }\n" pb.mcpt pb.gcpt
+let pp_problem out pb = Printf.fprintf out "{ mcpt=%i; gcpt=%i;\n%a\n%a\n%a\n%a\n%a\n }\n" pb.mcpt pb.gcpt
     pp_mdecls pb.mdecls S.pp pb.sigma
     pp_gdecls pb.gdecls pp_gpairs pb.gpairs
-    (pp_list "" pp_pair) pb.stashed
     pp_active pb.active
 
 let pp_state = get >>= fun pb -> effectful (fun () ->
@@ -130,14 +125,10 @@ module Problem = struct
   
   let get_gdecl pb lc n = try IntMap.find n pb.gdecls with | Not_found -> raise (TypingError (UnknownGuard (lc,n)))
   
-  let unguarded_pairs pb = match pb.active with
-    | None,l -> l
-    | Some _,_ -> pb.stashed
-  
   let get_gpairs pb lc n = if S.guard_mem pb.sigma n then []
   else match pb.active with
-    | Some m,l when (n=m) -> l
-    | _,_ -> try let (_,l) = List.find (fun (m,_) -> n=m) pb.gpairs in l with | Not_found -> raise (TypingError (UnknownGuard (lc,n)))
+    | Some (m,l) when (n=m) -> l
+    | _ -> try let (_,l) = List.find (fun (m,_) -> n=m) pb.gpairs in l with | Not_found -> raise (TypingError (UnknownGuard (lc,n)))
   
   (* Removes the first element matching p from l. *)
   let list_pop p l = let rec aux acc = function
@@ -146,37 +137,16 @@ module Problem = struct
     | [] -> raise Not_found
     in aux [] l
   
-  let is_active_guard pb = function
-    | Some (lc,n) -> begin match pb.active with
-        | Some m,_ when (n=m) -> true
-        | _,_ -> false
-        end
-    | None -> begin match pb.active with
-        | None,_ -> true
-        | _,_ -> false
-        end
-  
-  let activate_pairs pb x = if is_active_guard pb x then pb else match x with
-    | Some (lc,n) ->
-        let (_,npairs),gpairs' = try list_pop (fun (m,_) -> n=m) pb.gpairs with | Not_found -> raise (TypingError (UnknownGuard (lc,n))) in
-        begin match pb.active with
-          | Some m,mpairs -> {pb with gpairs=(m,mpairs)::gpairs'; active=Some n,npairs}
-          | None,pairs -> {pb with gpairs=gpairs'; stashed=pairs; active=Some n,npairs}
-          end
-    | None -> begin match pb.active with
-        | Some n,npairs -> {pb with gpairs=(n,npairs)::pb.gpairs; stashed=[]; active=None,pb.stashed}
-        | _,_ -> assert false (* not is_active_guard pb None *)
-        end
+  let is_active_guard pb n = match pb.active with
+    | Some (m,_) when (n=m) -> true
+    | _ -> false
 
   let activate_nonempty pb = match pb.active with
-    | _,_::_ -> Some pb
-    | Some m,[] when (List.length pb.stashed > 0) -> Some (activate_pairs pb None)
-    | _,[] -> (* No active pairs, no stashed pairs *)
-        begin try
-          let (n,_) = List.find (function | _,[] -> false | _,_ -> true) pb.gpairs in
-          Some (activate_pairs pb (Some (dloc,n)))
-        with | Not_found -> None
-        end
+    | Some _ -> Some pb
+    | None -> begin match pb.gpairs with
+      | x::gpairs' -> Some {pb with gpairs=gpairs'; active=Some x}
+      | [] -> None
+      end
 end
 
 let raise e = effectful (fun () -> raise e)
@@ -190,11 +160,6 @@ We can catch new pairs in
 - add_cast
 - pair_modify
 *)
-
-let add_pair sg p = (*effectful (fun () -> Printf.printf "Adding pair %a in\n" pp_pair p) >>= fun () -> pp_state >>= fun () ->*)
-  modify (fun pb -> match pb.active with
-    | None,l -> {pb with active=None,l@[p]}
-    | _,_ -> {pb with stashed=pb.stashed@[p]})
 
 let add_cast sg lc ctx a b t = get >>= fun pb ->
   let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
@@ -214,13 +179,6 @@ let new_meta ctx lc s k = get >>= fun pb -> match k with
 let meta_decl lc s n = get >>= fun pb -> return (Problem.get_mdecl pb lc s n)
 
 let guard_decl lc n = get >>= fun pb -> return (Problem.get_gdecl pb lc n)
-
-let add_sort_pair sg ctx = function
-  | Extra (lc,Pretyped,Meta(s,x,ts)) as t -> meta_decl lc s x >>= begin function
-      | (_,MSort) -> return ()
-      | _ -> new_meta ctx lc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
-      end
-  | t -> new_meta ctx dloc (hstring "Sort") MSort >>= fun ms -> add_pair sg (ctx,t,ms)
 
 let set_mdecl n d = modify (fun pb -> { pb with mdecls=IntMap.add n d pb.mdecls })
 
@@ -242,9 +200,11 @@ let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
   let md = IntMap.map (fun (ctx,ty) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, mkind_map (S.apply s) ty)) pb.mdecls in
   let gd = IntMap.map (fun (ctx,a,b) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s a, S.apply s b)) pb.gdecls in
   let gp = List.map (fun (n,l) -> n,(List.map (fun (ctx,t1,t2) -> List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2) l)) pb.gpairs in
-  let sp = List.map (fun (ctx,t1,t2) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2)) pb.stashed in 
-  let ap = List.map (fun (ctx,t1,t2) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2)) (snd pb.active) in
-  {mcpt=pb.mcpt; gcpt=pb.gcpt; mdecls=md; sigma=s; gdecls=gd; gpairs=gp; stashed=sp; active=(fst pb.active),ap; })
+  let ap = match pb.active with
+    | Some (n,l) -> Some (n,List.map (fun (ctx,t1,t2) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s t1, S.apply s t2)) l)
+    | None -> None
+    in
+  {mcpt=pb.mcpt; gcpt=pb.gcpt; mdecls=md; sigma=s; gdecls=gd; gpairs=gp; active=ap; })
 
 let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
   with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
@@ -274,19 +234,19 @@ let rec expected_type sg ctx = function
 (* returns None if there are no (unsolved) disagreement pairs *)
 let inspect = get >>= fun pb -> match Problem.activate_nonempty pb with
   | Some pb' -> begin match pb'.active with
-      | _,x::_ -> set pb' >> return (Some x)
+      | Some (_,x::_) -> set pb' >> return (Some x)
       | _ -> assert false
       end
   | None -> return None
 
 (*
-The first pair is popped and used for f's argument.
+The first pair is used for f's argument.
 NB: UNDEFINED BEHAVIOR if f modifies the active field. *)
 let pair_modify f = get >>= fun pb -> match pb.active with
-  | x,p::rem -> set { pb with active=x,rem } >> f p >>= fun l -> modify (fun pb -> { pb with active=x,List.append l rem }) >>
+  | Some (x,p::rem) -> f p >>= fun l -> modify (fun pb -> { pb with active=Some (x,List.append l rem) }) >>
       get >>= fun pb -> begin match pb.active with
-        | Some n,[] -> set {pb with sigma=S.guard_add pb.sigma n; stashed=[]; active=None,pb.stashed} (* #n has no pairs left. *)
-        | _,_ -> return ()
+        | Some (n,[]) -> set {pb with sigma=S.guard_add pb.sigma n; active=None} (* #n has no pairs left. *)
+        | _ -> return ()
         end
   | _ -> zero Not_Applicable
 

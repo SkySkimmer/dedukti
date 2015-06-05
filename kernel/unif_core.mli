@@ -26,10 +26,6 @@ val ground : problem -> pterm -> typed term
 
 type pair = pcontext*pterm*pterm
 
-val add_pair : Signature.t -> pair -> unit t
-
-val add_sort_pair : Signature.t -> pcontext -> pterm -> unit t
-
 (*
 [add_cast sg lc ctx a b t] casts t of type a to type b by adding a guard
 *)

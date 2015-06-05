@@ -369,9 +369,9 @@ let check_rule sg (ctx,le,ri:rule) : unit =
     if SS.is_identity sigma then ri
     else ( debug "%a" SS.pp sigma ; (SS.apply sigma ri 0) ) in
   let j_ri = Checker.infer sg ctx ri2 in
-    if KMeta.unify sg ctx ty_inf j_ri.ty
+    if Reduction.are_convertible sg ty_inf j_ri.ty
       then ()
-      else KMeta.fail (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty))
+      else raise (TypingError (ConvertibilityError (ri,Context.to_context ctx,ty_inf,j_ri.ty)))
 
 (* ********************** JUDGMENTS *)
 (*

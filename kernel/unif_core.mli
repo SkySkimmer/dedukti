@@ -39,6 +39,8 @@ val meta_decl : loc -> ident -> int -> (pcontext*mkind) t
 
 val whnf : Signature.t -> pterm -> pterm t
 
+val extra_val : pretyped -> pterm option t
+
 val are_convertible : Signature.t -> pterm -> pterm -> bool t
 
 val normalize : unit t
@@ -74,11 +76,15 @@ val meta_same_same : unit t
 
 val meta_same : unit t
 
-val meta_inst : Signature.t -> side -> unit t
-
-
 val split_app : int -> unit t
 
 (* NB: assumes the filter and the meta's pcontext have the same length. *)
 val narrow_meta : loc -> ident -> int -> bool list -> unit t
+
+(*
+[refine n t] when ctx |- ?n : ty and ctx |- t : ty' guards t to ty then sets ?n to it
+Also occurs check
+*)
+val refine : Signature.t -> loc -> ident -> int -> pterm -> unit t
+
 

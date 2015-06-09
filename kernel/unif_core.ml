@@ -9,6 +9,7 @@ type pcontext = pretyped context
 module S = Msubst
 
 let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t
+let lsubst_apply ts t = subst_l (List.map snd ts) 0 t
 
 let mk_Appl t = function
   | a::args -> mk_App t a args
@@ -147,6 +148,10 @@ module Problem = struct
       | x::gpairs' -> Some {pb with gpairs=gpairs'; active=Some x}
       | [] -> None
       end
+
+  let swap_active pb = match pb.gpairs,pb.active with
+    | p::l,Some p' -> {pb with gpairs=p'::l; active=Some p}
+    | _,_ -> assert false
 end
 
 let raise e = effectful (fun () -> raise e)
@@ -161,10 +166,46 @@ We can catch new pairs in
 - pair_modify
 *)
 
+let rigid_head sg = function
+  | Const (lc,m,v) | App (Const (lc,m,v),_,_) -> Signature.is_constant sg lc m v
+  | App (Lam _,_,_) | Extra _ | App (Extra _,_,_) -> false
+  | _ -> true
+
+let flexible_head sg t = not (rigid_head sg t)
+
+let rec concat_opt = function
+  | (Some x)::l -> bind_opt (fun l -> Some (x@l)) (concat_opt l)
+  | None::_ -> None
+  | [] -> Some []
+
+(* Do trivial operations on a pair *)
+(* TODO: return ('a,'b) error where 'a = pair list and 'b = pair to indicate where non unifiability is *)
+let rec process_pair sg sigma (ctx,lop,rop) = let lop = S.head_delta sigma lop and rop = S.head_delta sigma rop in
+  if flexible_head sg lop || flexible_head sg rop then Some [(ctx,lop,rop)]
+  else match lop,rop with
+    | Kind, Kind | Type _, Type _ -> Some []
+    | DB (_,_,n), DB (_,_,m) when (n=m) -> Some []
+    | Const (_,m,v), Const (_,m',v') when (ident_eq m m' && ident_eq v v') ->
+        Some []
+    | App (Const (_,m,v),a,args), App (Const (_,m',v'),a',args') when (ident_eq m m' && ident_eq v v') ->
+        begin try concat_opt (List.map2 (fun a b -> process_pair sg sigma (ctx,a,b)) (a::args) (a'::args'))
+        with | Invalid_argument _ -> None
+        end
+    | App (DB (_,_,n),a,args), App (DB (_,_,m),a',args') when (n=m) ->
+        begin try concat_opt (List.map2 (fun a b -> process_pair sg sigma (ctx,a,b)) (a::args) (a'::args'))
+        with | Invalid_argument _ -> None
+        end
+    | Pi (lc,x,a,b), Pi (_,_,a',b') ->
+        bind_opt (fun l -> bind_opt (fun l' -> Some (l@l')) (process_pair sg sigma ((lc,x,a)::ctx,b,b'))) (process_pair sg sigma (ctx,a,a'))
+    | Lam (lc,x,Some a,b), Lam (_,_,Some a',b') ->
+        bind_opt (fun l -> bind_opt (fun l' -> Some (l@l')) (process_pair sg sigma ((lc,x,a)::ctx,b,b'))) (process_pair sg sigma (ctx,a,a'))
+    | Lam _, Lam _ -> failwith "TODO: process_pair on domain free lambdas"
+    | _,_ -> None (* both terms are rigid *)
+
 let add_cast sg lc ctx a b t = get >>= fun pb ->
   let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
   let t' = mk_Guard lc pb.gcpt lsubst t in
-  set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=(pb.gcpt,[ctx,a,b])::pb.gpairs } >>
+  set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=pb.gpairs@[pb.gcpt,[ctx,a,b]] } >>
   return t'
 
 let new_meta ctx lc s k = get >>= fun pb -> match k with
@@ -196,6 +237,8 @@ let meta_constraint lc s n = meta_decl lc s n >>= function
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)
 
+let extra_val ex = get >>= fun pb -> return (S.extra_val pb.sigma ex)
+
 let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
   let md = IntMap.map (fun (ctx,ty) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, mkind_map (S.apply s) ty)) pb.mdecls in
   let gd = IntMap.map (fun (ctx,a,b) -> (List.map (fun (lc,x,t) -> (lc,x,S.apply s t)) ctx, S.apply s a, S.apply s b)) pb.gdecls in
@@ -206,68 +249,7 @@ let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
     in
   {mcpt=pb.mcpt; gcpt=pb.gcpt; mdecls=md; sigma=s; gdecls=gd; gpairs=gp; active=ap; })
 
-let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
-  with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
-
-let rec pi_app sg ty = function
-  | a::args -> whnf sg ty >>= begin function
-      | Pi (_,_,_,b) -> pi_app sg (Subst.subst b a) args
-      | _ -> zero Not_Applicable (* Not necessarily the right error but w/e *)
-      end
-  | [] -> return ty
-
-let rec expected_type sg ctx = function
-  | Kind -> raise (TypingError KindIsNotTypable)
-  | Type _ -> return mk_Kind
-  | DB (lc,x,n) -> var_get_type ctx lc x n
-  | Const (l,md,id) -> return (lift_term (Signature.get_type sg l md id))
-  | App (f,a,args) -> expected_type sg ctx f >>= fun ty -> pi_app sg ty (a::args)
-  | Lam (lc,x,Some a,b) -> expected_type sg ((lc,x,a)::ctx) b >>= fun ty ->
-      return (mk_Pi lc x a ty)
-  | Lam (lc,_,None,_) -> raise (TypingError (DomainFreeLambda lc))
-  | Pi (lc,x,a,b) -> expected_type sg ((lc,x,a)::ctx) b
-  | Extra (lc,Pretyped,Meta(s,x,ts)) -> meta_constraint lc s x >>= fun (_,ty0) ->
-      return (subst_l (List.map snd ts) 0 ty0)
-  | Extra (lc,Pretyped,Guard(n,ts,_)) -> guard_decl lc n >>= fun (_,_,b) ->
-      return (subst_l (List.map snd ts) 0 b)
-
-(* returns None if there are no (unsolved) disagreement pairs *)
-let inspect = get >>= fun pb -> match Problem.activate_nonempty pb with
-  | Some pb' -> begin match pb'.active with
-      | Some (_,x::_) -> set pb' >> return (Some x)
-      | _ -> assert false
-      end
-  | None -> return None
-
-(*
-The first pair is used for f's argument.
-NB: UNDEFINED BEHAVIOR if f modifies the active field. *)
-let pair_modify f = get >>= fun pb -> match pb.active with
-  | Some (x,p::rem) -> f p >>= fun l -> modify (fun pb -> { pb with active=Some (x,List.append l rem) }) >>
-      get >>= fun pb -> begin match pb.active with
-        | Some (n,[]) -> set {pb with sigma=S.guard_add pb.sigma n; active=None} (* #n has no pairs left. *)
-        | _ -> return ()
-        end
-  | _ -> zero Not_Applicable
-
-type side = LEFT | RIGHT
-
-let pp_side out = function
-  | LEFT -> Printf.fprintf out "LEFT"
-  | RIGHT -> Printf.fprintf out "RIGHT"
-
-let pair_modify_side side f = pair_modify (fun (ctx,lop,rop) -> match side with
-  | LEFT -> f lop >>= fun lop -> return [ctx,lop,rop]
-  | RIGHT -> f rop >>= fun rop -> return [ctx,lop,rop])
-
-let pair_symmetric side f = pair_modify (fun (ctx,lop,rop) -> match side with
-  | LEFT -> f ctx lop rop
-  | RIGHT -> f ctx rop lop)
-
-
-(*
-pair-convertible and helpers
-*)
+(** Retyping *)
 
 let rec add_to_list2 l1 l2 lst =
   match l1, l2 with
@@ -298,6 +280,141 @@ let rec are_convertible_lst sg : (pterm*pterm) list -> bool t = function
     end
 
 let are_convertible sg t1 t2 = are_convertible_lst sg [(t1,t2)]
+
+module Retyping = Elaboration(struct
+  type 'a tmp = 'a t
+  type 'a t = 'a tmp
+  
+  let return = return
+  let (>>=) = (>>=)
+  let (>>) = (>>)
+
+  type pextra = pretyped
+  type extra = pretyped
+  type ctx = pcontext
+  type jdg = pcontext*pterm*pterm
+
+  let  get_type ctx l x n =
+    try
+      let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty
+    with Failure _ ->
+      Pervasives.raise (TypingError (VariableNotFound (l,x,n,ctx)))
+
+  let judge ctx te ty = (ctx,te,ty)
+  let jdg_ctx (ctx,_,_) = ctx
+  let jdg_te (_,te,_) = te
+  let jdg_ty (_,_,ty) = ty
+
+  let to_context ctx = ctx
+
+  let fail = zero
+
+  let fold = fold
+
+  let cast sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
+    | true -> return (ctx,te,ty_exp)
+    | false -> add_cast sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
+        return (ctx,te',ty_exp)
+
+  let cast_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
+    | Kind | Type _ -> return jdg
+    | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_decl lc s n >>= fun (mctx,mty) -> begin match mty with
+        | MSort -> return jdg
+        | MType -> set_mdecl n (mctx,MSort) >> return jdg
+        | MTyped mty -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
+            add_cast sg lc ctx ty ms te >>= fun te' ->
+            return (ctx,te',ms)
+        end
+    | Extra (lc,Pretyped,_) -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
+        add_cast sg lc ctx ty ms te >>= fun te' ->
+        return (ctx,te',ms)
+    | _ -> zero (SortExpected (te, ctx, ty))
+
+  let cast_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
+    whnf sg ty_f >>= function
+      | Pi (_,_,a,b) -> cast sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
+          return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
+      | Extra  _ | App (Extra _,_,_) -> let (_,te_u,ty_u) = jdg_u in
+          let ctx2 = (dloc,empty,ty_u)::ctx in
+          new_meta ctx2 dloc empty MSort >>= fun ms ->
+          new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
+          cast sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
+          return (ctx,mk_App te_f te_u [],Subst.subst mk te_u)
+      | _ -> zero (ProductExpected (te_f,ctx,ty_f))
+
+  let cast_annot sg jdg = if !coc then cast_sort sg jdg else let (ctx,_,_) = jdg in cast sg jdg (ctx,mk_Type dloc,mk_Kind)
+  let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
+
+  let ctx_add sg l x jdg = let ctx0 = jdg_ctx jdg in
+    cast_annot sg jdg >>= fun jdg ->
+    return (jdg,(l,x,jdg_te jdg)::ctx0)
+
+  let unsafe_add ctx l x t = (l,x,t)::ctx
+
+  let reject_kind sg (ctx,te,ty) = whnf sg ty >>= function
+    | Kind -> zero (InexpectedKind (te, ctx))
+    | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint lc s n >>= fun _ -> return ()
+    | _ -> return ()
+
+  let whnf = whnf
+
+  let check_subst check sg ctx ts mctx =
+    fold (fun ts' ((x,t),(_,_,ty)) -> check sg t (ctx,lsubst_apply ts' ty,mk_Type dloc (* (x) *)) >>= fun (_,t',_) ->
+        return ((x,t')::ts')) [] (List.rev_map2 (fun x y -> x,y) ts mctx)
+
+  let infer_extra infer check sg ctx lc Pretyped = function
+    | Meta (s,n,ts) -> meta_constraint lc s n >>= fun (mctx,mty) ->
+        check_subst check sg ctx ts mctx >>= fun ts' ->
+        return (ctx,mk_Meta lc s n ts',lsubst_apply ts' mty)
+    | Guard (n,ts,t) -> guard_decl lc n >>= fun (gctx,gty_in,gty_out) ->
+        check_subst check sg ctx ts gctx >>= fun ts' ->
+        check sg t (ctx,lsubst_apply ts' gty_in,mk_Type dloc (* (x) *)) >>= fun (ctx,t',_) ->
+        return (ctx,mk_Guard lc n ts' t',lsubst_apply ts' gty_out)
+end)
+
+let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
+  with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
+
+(** Pair interface *)
+
+(* returns None if there are no (unsolved) disagreement pairs *)
+let inspect = get >>= fun pb -> match Problem.activate_nonempty pb with
+  | Some pb' -> begin match pb'.active with
+      | Some (_,x::_) -> set pb' >> return (Some x)
+      | _ -> assert false
+      end
+  | None -> return None
+
+(*
+The first pair is used for f's argument.
+NB: UNDEFINED BEHAVIOR if f modifies the active field.
+*)
+let pair_modify f = get >>= fun pb -> match pb.active with
+  | Some (x,p::rem) -> f p >>= fun l -> modify (fun pb -> { pb with active=Some (x,List.append l rem) }) >>
+      get >>= fun pb -> begin match pb.active with
+        | Some (n,[]) -> set {pb with sigma=S.guard_add pb.sigma n; active=None} (* #n has no pairs left. *)
+        | _ -> return ()
+        end
+  | _ -> zero Not_Applicable
+
+type side = LEFT | RIGHT
+
+let pp_side out = function
+  | LEFT -> Printf.fprintf out "LEFT"
+  | RIGHT -> Printf.fprintf out "RIGHT"
+
+let pair_modify_side side f = pair_modify (fun (ctx,lop,rop) -> match side with
+  | LEFT -> f lop >>= fun lop -> return [ctx,lop,rop]
+  | RIGHT -> f rop >>= fun rop -> return [ctx,lop,rop])
+
+let pair_symmetric side f = pair_modify (fun (ctx,lop,rop) -> match side with
+  | LEFT -> f ctx lop rop
+  | RIGHT -> f ctx rop lop)
+
+
+(*
+pair-convertible and helpers
+*)
 
 let pair_convertible sg = pair_modify (fun (ctx,lop,rop) ->
   are_convertible sg lop rop >>= function
@@ -444,91 +561,7 @@ let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
     | None -> zero Not_Applicable)
 
 
-(** META-INST and helpers *)
-
-let find_unique p l = let rec aux i = function
-  | x::l -> if p x then if List.exists p l then None else Some i
-            else aux (i+1) l
-  | [] -> None
-  in aux 0 l
-
-
-let opt_filter filter l = let rec aux acc filter l = match filter,l with
-  | true::filter,(Some x)::l -> aux (x::acc) filter l
-  | false::filter,_::l -> aux acc filter l
-  | [],[] -> List.rev acc
-  | _ -> assert false
-  in aux [] filter l
-
-(*
-y a metavariable, ts : (ident*term) option list
-Indices which are None in ts should be irrelevant for y
-*)
-let prune lc s y ts = meta_decl lc s y >>= fun (mctx,mty) ->
-  let filter = List.map (function | Some _ -> true | None -> false) ts in
-  get >>= fun pb ->
-  let filter,mctx' = sanitize_context pb.sigma filter mctx in
-  begin match mty with
-    | MTyped ty -> begin match sanitize_term pb.sigma filter ty with
-        | Some ty' -> return (MTyped ty')
-        | None -> zero Not_Applicable
-        end
-    | MType | MSort -> return mty
-    end >>= fun mty' ->
-  new_meta mctx' lc s mty' >>= function
-    | Extra (lc,Pretyped,Meta(s,z,_)) -> let mz = mk_Meta lc s z (context_project filter mctx) in
-        set_meta y mz >>
-        return (mk_Meta lc s z (opt_filter filter ts)) (* not sure about this *)
-    | _ -> assert false
-
-
-(*
-We try to invert the term, and fail with Not_Applicable if an unknown variable or the forbidden metavariable appear.
-If we fail for a term in a metavariable's substitution it should be pruned.
-*)
-let rec invert_term x vars q = function
-  | Kind | Type _ | Const _ as t -> return t
-  | DB (_,_,n) as t when (n<q) -> return t
-  | DB (lc,x,n) -> begin match find_unique (fun m -> (n-q)=m) vars with
-      | Some m -> return (mk_DB lc x (m+q))
-      | None -> zero Not_Applicable
-      end
-  | App (f,a,args) -> fold (fun l t -> invert_term x vars q t >>= fun t' -> return (t'::l)) [] (f::a::args) >>= fun l ->
-      begin match List.rev l with
-        | f::a::args -> return (mk_App f a args)
-        | _ -> assert false
-        end
-  | Lam (lc,y,Some a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y (Some a) b)
-  | Lam (lc,y,None  ,b) -> invert_term x vars (q+1) b >>= fun b -> return (mk_Lam lc y None b)
-  | Pi (lc,y,a,b) -> invert_term x vars q a >>= fun a -> invert_term x vars (q+1) b >>= fun b -> return (mk_Pi lc y a b)
-  | Extra (lc,Pretyped,ex) -> get >>= fun pb -> begin match S.extra_val pb.sigma ex with
-    | Some mt' -> invert_term x vars q mt'
-    | None -> begin match ex with
-        | Meta(s,y,ts) -> if x=y then zero Not_Applicable
-            else fold (fun (l,clean) (y,t) -> once (plus
-                (invert_term x vars q t >>= fun t -> return ((Some (y,t))::l,clean))
-                (function | Not_Applicable -> return (None::l,false) | e -> zero e)
-              )) ([],true) ts >>= fun (ts',clean) ->
-              if clean then return (mk_Meta lc s y (List.rev_map (function | Some x -> x | None -> assert false) ts'))
-              else prune lc s y (List.rev ts')
-        | Guard(n,ts,t) -> (* TODO: maybe prune *)
-            fold (fun l (y,t) -> invert_term x vars q t >>= fun t' -> return ((y,t')::l)) [] (List.rev ts) >>= fun ts' ->
-            invert_term x vars q t >>= fun t' ->
-            return (mk_Guard lc n ts' t')
-        end
-    end
-
-let rec invert_add_lambdas ctx x argn varl t = if argn = 0 then return t
-  else match varl with
-  | v::varl -> var_get_type ctx dloc empty v >>= fun ty ->
-    invert_term x varl 0 ty >>= fun ty ->
-    invert_add_lambdas ctx x (argn-1) varl (mk_Lam dloc empty (Some ty) t)
-  | [] -> assert false
-
-let invert ctx x ts_var args_var t =
-  let argn,varl = List.fold_left (fun (n,l) v -> (n+1,v::l)) (0,List.rev ts_var) args_var in
-  invert_term x varl 0 t >>= fun t' ->
-  invert_add_lambdas ctx x argn varl t'
+(** REFINE and helpers *)
 
 (* TODO: instead of (x=y) check if x appears in y's definition *)
 let rec meta_occurs x = function
@@ -539,60 +572,54 @@ let rec meta_occurs x = function
   | Extra (_,Pretyped,Meta(_,y,ts)) -> (x=y) || List.exists (fun (_,t) -> meta_occurs x t) ts
   | Extra (_,Pretyped,Guard(_,ts,t)) -> List.exists (fun (_,t) -> meta_occurs x t) ts || meta_occurs x t
 
-(* m is a meta whose type or kind must be the same as that of t *)
-let meta_set_ensure_type sg lc s n t =
-  meta_decl lc s n >>= fun (mctx,mty) ->
-  begin match mty with
-    | MTyped ty -> expected_type sg mctx t >>= fun ty' ->
-        return [mctx,ty,ty']
-    | MType -> begin match t with
-        | Kind -> return []
-        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function
-            | (_,MType) -> return []
-            | (_,MSort) -> set_mdecl n (mctx,MSort) >>= fun () -> return []
-            | (_,MTyped _) -> expected_type sg mctx t >>= fun ty' ->
-                new_meta mctx lc s MSort >>= fun ty ->
-                set_mdecl n (mctx,MTyped ty) >>= fun () ->
-                return [mctx,ty,ty']
-            end
-        | _ -> expected_type sg mctx t >>= fun ty' ->
-            new_meta mctx lc s MSort >>= fun ty ->
-            set_mdecl n (mctx,MTyped ty) >>= fun () ->
-            return [mctx,ty,ty']
-        end
-    | MSort -> begin match t with
-        | Kind -> return []
-        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function
-            | (mctx',MType) -> set_mdecl x (mctx',MSort) >>= fun () -> return []
-            | (_,MSort) -> return []
-            | (mctx',MTyped _) -> expected_type sg mctx t >>= fun ty' ->
-                set_mdecl n (mctx,MTyped mk_Kind) >>= fun () ->
-                return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
-            end
-        | _ -> expected_type sg mctx t >>= fun ty' ->
-            set_mdecl n (mctx,MTyped mk_Kind) >>= fun () ->
-            return [(mctx,t,mk_Type dloc);(mctx,ty',mk_Kind)]
-        end
-    end >>= fun l -> set_meta n t >>= fun () -> return l
 
-let meta_inst sg side = pair_symmetric side (fun ctx active passive -> begin match active with
-  | Extra (_,Pretyped,_) -> return (active,[])
-  | App (Extra (_,Pretyped,_) as m,a,args) -> return (m,a::args)
-  | _ -> zero Not_Applicable
-  end >>= fun (m,args) -> match m with
-  | Extra (lc,Pretyped,Meta(s,n,ts)) -> begin match Opt.fold (fun vl -> function | (_,DB (_,_,n)) -> Some (n::vl) | _ -> None) [] ts with
-    | Some ts_var -> begin match Opt.fold (fun vl -> function | DB (_,_,n) -> Some (n::vl) | _ -> None) [] args with
-      | Some args_var -> return (lc,s,n,ts_var,args_var)
-      | None -> zero Not_Applicable
+let refine_typed sg lc n ty_exp (ctx,t,ty) = are_convertible sg ty ty_exp >>= function
+  | true -> set_meta n t
+  | false -> add_cast sg lc ctx ty ty_exp t >>= fun t' ->
+      set_meta n t' >>
+      (* If ty and ty_exp are not convertible modulo sg and the problem, then non trivial unification has to be done, so there is a new guard *)
+      modify Problem.swap_active
+
+let refine sg lc s n t = if meta_occurs n t
+  then zero Not_Applicable
+  else meta_decl lc s n >>= fun (ctx,mty) -> begin match mty with
+      | MTyped ty -> Retyping.infer sg ctx t >>= fun jdg ->
+          refine_typed sg lc n ty jdg
+      | MType -> begin match t with
+        | Kind -> set_mdecl n (ctx,MSort) >> set_meta n t
+        | Type _ -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n t
+        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function (* TODO: check_subst *)
+            | (_,MType) -> set_meta n t
+            | (_,MSort) -> set_mdecl n (ctx,MSort) >> set_meta n t
+            | (_,MTyped _) -> new_meta ctx lc s MSort >>= fun ms ->
+                set_mdecl n (ctx,MTyped ms) >>
+                Retyping.infer sg ctx t >>= fun jdg ->
+                refine_typed sg lc n ms jdg
+            end
+        | _ -> new_meta ctx lc s MSort >>= fun ms ->
+            set_mdecl n (ctx,MTyped ms) >>
+            Retyping.infer sg ctx t >>= fun jdg ->
+            refine_typed sg lc n ms jdg
+        end
+      | MSort -> begin match t with
+          | Kind -> set_meta n t
+          | Type _ -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n t
+          | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function (* TODO: check_subst *)
+              | (mctx',MType) -> set_mdecl x (mctx',MSort) >> set_meta n t
+              | (_,MSort) -> set_meta n t
+              | (_,MTyped _) -> Retyping.infer sg ctx t >>= fun (_,t',ty) ->
+                  are_convertible sg t' (mk_Type dloc) >>= begin function
+                    | true -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n (mk_Type lc)
+                    | false -> zero (SortExpected (t,ctx,t))
+                    end
+              end
+          | _ -> Retyping.infer sg ctx t >>= fun (_,t',ty) -> (* TODO: improve this *)
+              are_convertible sg t' (mk_Type dloc) >>= begin function
+                | true -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n (mk_Type lc)
+                | false -> zero (SortExpected (t,ctx,t))
+                end
+          end
       end
-    | None -> zero Not_Applicable
-    end >>= fun (lc,s,n,ts_var,args_var) ->
-    let passive = Reduction.whnf sg passive in
-    invert ctx n ts_var args_var passive >>= fun inst ->
-    if meta_occurs n inst then zero Not_Applicable
-    else meta_set_ensure_type sg lc s n inst
-  | _ -> assert false
-  )
 
 (*
 split_app and helpers

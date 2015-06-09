@@ -58,9 +58,8 @@ end = struct
           return (ctx,mk_App te_f te_u [],Subst.subst mk te_u)
       | _ -> fail (ProductExpected (te_f,ctx,ty_f))
 
-  let infer_extra infer check sg ctx lc kind ex = match kind with
-    | Untyped -> let U s = ex in
-        new_meta ctx lc s MType >>= fun mk ->
+  let infer_extra infer check sg ctx lc Untyped = function
+    | U s -> new_meta ctx lc s MType >>= fun mk ->
         new_meta ctx lc s (MTyped mk) >>= fun mj ->
         return (judge ctx mj mk)
 end

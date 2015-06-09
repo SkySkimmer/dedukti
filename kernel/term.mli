@@ -57,7 +57,7 @@ val pp_lsubst   : out_channel -> lsubst  -> unit
 type 'a context = ( loc * ident * 'a term ) list
 val pp_context  : out_channel -> 'a context -> unit
 
-(** {3 Unification candidates} *)
+(** {3 Metavariable types} *)
 
 type mkind =
   | MTyped of pretyped term

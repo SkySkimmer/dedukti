@@ -147,7 +147,8 @@ let fully_backtracking l = let rec aux = function
   in aux l
 
 let rec solve_pair sg p = fully_backtracking
-  [ first_applicable [ meta_delta RIGHT; meta_delta LEFT ]
+  [ pair_convertible sg
+  ; first_applicable [ meta_delta RIGHT; meta_delta LEFT ]
   ; first_applicable [ meta_same_same; meta_same ]
   ; meta_inst sg RIGHT p; meta_fo RIGHT p; meta_deldeps RIGHT p
   ; meta_inst sg LEFT  p; meta_fo LEFT  p; meta_deldeps LEFT  p

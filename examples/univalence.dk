@@ -24,11 +24,11 @@ eq_refl : A : ? -> a : U A -> U (eq ? a a).
 transport (A : ?) (P : ?) (x : U A) (y : ?) (e : ?) (H : U (P x)) : U (P y)
  := eq_rect ? x (a : ? => p : ? => P a) H ? e.
 
-eq_inverse (A : ?) (x : U A) (y : U A) (p : U (eq A x y)) : U (eq A y x)
+eq_inverse (A : ?) (x : ?) (y : ?) (p : U (eq A x y)) : U (eq ? y x)
  := transport A (a : ? => eq ? a x) x y p (eq_refl A x).
 
-ap (A : ?) (B : type) (f : U (fun A B)) (x : U A) : y : U A -> p : U (eq A x y) -> U (eq B (f x) (f y))
- := eq_rect ? x (y : U A => p : U (eq A x y) => eq B (f x) (f y)) (eq_refl B (f x)).
+ap (A : ?) (B : ?) (f : U (fun A B)) (x : ?) : y : ? -> p : U (eq ? x y) -> U (eq ? (f x) (f y))
+ := eq_rect ? x (y : ? => p : ? => eq ? (f x) (f y)) (eq_refl ? (f x)).
 
 transport_const (A : type) (B : type) (x1 : U A) (x2 : U A) (p : U (eq A x1 x2)) (y : U B)
  : U (eq B (transport A (x : U A => B) x1 x2 p y) y)

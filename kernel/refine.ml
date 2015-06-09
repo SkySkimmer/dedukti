@@ -37,24 +37,24 @@ end = struct
 
   let extract sg m = run m
 
-  let cast_annot sg jdg = if !coc then cast_sort sg jdg else let (ctx,_,_) = jdg in cast sg jdg (ctx,mk_Type dloc,mk_Kind)
+  let guard_annot sg jdg = if !coc then guard_sort sg jdg else let (ctx,_,_) = jdg in guard sg jdg (ctx,mk_Type dloc,mk_Kind)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
 
   let ctx_add sg l x jdg = let ctx0 = jdg_ctx jdg in
-    cast_annot sg jdg >>= fun jdg ->
+    guard_annot sg jdg >>= fun jdg ->
     return (jdg,(l,x,jdg_te jdg)::ctx0)
 
   let unsafe_add ctx l x t = (l,x,t)::ctx
 
-  let cast_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
+  let guard_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
     whnf sg ty_f >>= function
-      | Pi (_,_,a,b) -> cast sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
+      | Pi (_,_,a,b) -> guard sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
       | Extra  _ | App (Extra _,_,_) -> let (_,te_u,ty_u) = jdg_u in
           let ctx2 = (dloc,empty,ty_u)::ctx in
           new_meta ctx2 dloc empty MSort >>= fun ms ->
           new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
-          cast sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
+          guard sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst mk te_u)
       | _ -> fail (ProductExpected (te_f,ctx,ty_f))
 

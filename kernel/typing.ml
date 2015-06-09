@@ -168,9 +168,9 @@ module type Meta = sig
 
   val whnf : Signature.t -> extra term -> extra term t
 
-  val cast : Signature.t -> jdg -> jdg -> jdg t
-  val cast_sort : Signature.t -> jdg -> jdg t
-  val cast_app : Signature.t -> jdg -> jdg -> jdg t
+  val guard : Signature.t -> jdg -> jdg -> jdg t
+  val guard_sort : Signature.t -> jdg -> jdg t
+  val guard_app : Signature.t -> jdg -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t
@@ -205,15 +205,15 @@ module KMeta : Meta with type 'a t = 'a and type pextra = typed and type extra =
   let ctx_add _ lc x jdg = jdg,Context.add lc x jdg
   let unsafe_add = Context.unsafe_add
   
-  let cast sg {ctx=ctx; te=te; ty=ty;} {te=ty_exp} =
+  let guard sg {ctx=ctx; te=te; ty=ty;} {te=ty_exp} =
     if Reduction.are_convertible sg ty ty_exp then {ctx=ctx; te=te; ty=ty_exp;}
     else fail (ConvertibilityError (te,Context.to_context ctx,ty_exp,ty))
   
-  let cast_sort sg jdg = match jdg.ty with
+  let guard_sort sg jdg = match jdg.ty with
     | Kind | Type _ -> jdg
     | _ -> fail (SortExpected (jdg.te, to_context jdg.ctx, jdg.ty))
 
-  let cast_app sg jdg_f jdg_u = match Reduction.whnf sg jdg_f.ty with
+  let guard_app sg jdg_f jdg_u = match Reduction.whnf sg jdg_f.ty with
     | Pi (_,_,a,b) -> if Reduction.are_convertible sg a jdg_u.ty
         then {ctx=jdg_f.ctx; te=mk_App jdg_f.te jdg_u.te []; ty=Subst.subst b jdg_u.te;}
         else fail (ConvertibilityError (jdg_u.te,to_context jdg_f.ctx,a,jdg_u.ty))
@@ -267,7 +267,7 @@ module Elaboration (M:Meta) = struct
     | Pi (l,x,a,b) ->
         infer sg ctx a >>= fun jdg_a ->
         M.ctx_add sg l x jdg_a >>= fun (jdg_a,ctx2) ->
-        infer sg ctx2 b >>= cast_sort sg >>= fun jdg_b ->
+        infer sg ctx2 b >>= guard_sort sg >>= fun jdg_b ->
         M.return (judge ctx (mk_Pi l x (jdg_te jdg_a) (jdg_te jdg_b)) (jdg_ty jdg_b))
     | Lam  (l,x,Some a,b) ->
         infer sg ctx a >>= fun jdg_a ->
@@ -289,20 +289,20 @@ module Elaboration (M:Meta) = struct
                 (* (x) might as well be Kind but here we do not care*)
                 check sg u (judge ctx2 b (mk_Type dloc (* (x) *))) >>= fun jdg_b ->
                   M.return (judge ctx (mk_Lam l x (Some a) (jdg_te jdg_b)) pi)
-            | Extra _ | App (Extra _,_,_) -> infer sg ctx te >>= fun jte -> M.cast sg jte jty
+            | Extra _ | App (Extra _,_,_) -> infer sg ctx te >>= fun jte -> M.guard sg jte jty
             | _ -> fail (ProductExpected (te,M.to_context ctx,ty_exp))
             end
         | _ -> infer sg ctx te >>= fun jte ->
-            M.cast sg jte jty
+            M.guard sg jte jty
 
   and check_app sg jdg_f (*consumed_te consumed_ty*) = function
     | [] -> M.return jdg_f
     | u::atl -> let ctx = jdg_ctx jdg_f and te = jdg_te jdg_f and ty = jdg_ty jdg_f in
       begin M.whnf sg ty >>= function
         | Pi (_,_,a,b) -> check sg u (judge ctx a (mk_Type dloc (* (x) *))) >>= fun u_inf ->
-            cast_app sg jdg_f u_inf
+            guard_app sg jdg_f u_inf
         | Extra _ | App (Extra _,_,_) -> infer sg ctx u >>= fun jdg_u ->
-            cast_app sg jdg_f jdg_u
+            guard_app sg jdg_f jdg_u
         | _ -> fail (ProductExpected (te,M.to_context ctx,ty))
         end >>= fun jdg_app ->
       check_app sg jdg_app atl

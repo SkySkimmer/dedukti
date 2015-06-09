@@ -162,7 +162,7 @@ let ground pb t = S.to_ground pb.sigma t
 (*
 We can catch new pairs in
 - add_pair
-- add_cast
+- add_guard
 - pair_modify
 *)
 
@@ -202,7 +202,7 @@ let rec process_pair sg sigma (ctx,lop,rop) = let lop = S.head_delta sigma lop a
     | Lam _, Lam _ -> failwith "TODO: process_pair on domain free lambdas"
     | _,_ -> None (* both terms are rigid *)
 
-let add_cast sg lc ctx a b t = get >>= fun pb ->
+let add_guard sg lc ctx a b t = get >>= fun pb ->
   let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
   let t' = mk_Guard lc pb.gcpt lsubst t in
   set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=pb.gpairs@[pb.gcpt,[ctx,a,b]] } >>
@@ -311,42 +311,42 @@ module Retyping = Elaboration(struct
 
   let fold = fold
 
-  let cast sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
+  let guard sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
     | true -> return (ctx,te,ty_exp)
-    | false -> add_cast sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
+    | false -> add_guard sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
         return (ctx,te',ty_exp)
 
-  let cast_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
+  let guard_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
     | Kind | Type _ -> return jdg
     | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_decl lc s n >>= fun (mctx,mty) -> begin match mty with
         | MSort -> return jdg
         | MType -> set_mdecl n (mctx,MSort) >> return jdg
         | MTyped mty -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
-            add_cast sg lc ctx ty ms te >>= fun te' ->
+            add_guard sg lc ctx ty ms te >>= fun te' ->
             return (ctx,te',ms)
         end
     | Extra (lc,Pretyped,_) -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
-        add_cast sg lc ctx ty ms te >>= fun te' ->
+        add_guard sg lc ctx ty ms te >>= fun te' ->
         return (ctx,te',ms)
     | _ -> zero (SortExpected (te, ctx, ty))
 
-  let cast_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
+  let guard_app sg jdg_f jdg_u = let (ctx,te_f,ty_f) = jdg_f in
     whnf sg ty_f >>= function
-      | Pi (_,_,a,b) -> cast sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
+      | Pi (_,_,a,b) -> guard sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
       | Extra  _ | App (Extra _,_,_) -> let (_,te_u,ty_u) = jdg_u in
           let ctx2 = (dloc,empty,ty_u)::ctx in
           new_meta ctx2 dloc empty MSort >>= fun ms ->
           new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
-          cast sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
+          guard sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst mk te_u)
       | _ -> zero (ProductExpected (te_f,ctx,ty_f))
 
-  let cast_annot sg jdg = if !coc then cast_sort sg jdg else let (ctx,_,_) = jdg in cast sg jdg (ctx,mk_Type dloc,mk_Kind)
+  let guard_annot sg jdg = if !coc then guard_sort sg jdg else let (ctx,_,_) = jdg in guard sg jdg (ctx,mk_Type dloc,mk_Kind)
   let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
 
   let ctx_add sg l x jdg = let ctx0 = jdg_ctx jdg in
-    cast_annot sg jdg >>= fun jdg ->
+    guard_annot sg jdg >>= fun jdg ->
     return (jdg,(l,x,jdg_te jdg)::ctx0)
 
   let unsafe_add ctx l x t = (l,x,t)::ctx
@@ -575,7 +575,7 @@ let rec meta_occurs x = function
 
 let refine_typed sg lc n ty_exp (ctx,t,ty) = are_convertible sg ty ty_exp >>= function
   | true -> set_meta n t
-  | false -> add_cast sg lc ctx ty ty_exp t >>= fun t' ->
+  | false -> add_guard sg lc ctx ty ty_exp t >>= fun t' ->
       set_meta n t' >>
       (* If ty and ty_exp are not convertible modulo sg and the problem, then non trivial unification has to be done, so there is a new guard *)
       modify Problem.swap_active

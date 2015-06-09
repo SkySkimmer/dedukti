@@ -27,9 +27,9 @@ val ground : problem -> pterm -> typed term
 type pair = pcontext*pterm*pterm
 
 (*
-[add_cast sg lc ctx a b t] casts t of type a to type b by adding a guard
+[add_guard sg lc ctx a b t] takes t of type a to type b by adding a guard
 *)
-val add_cast : Signature.t -> loc -> pcontext -> pterm -> pterm -> pterm -> pterm t
+val add_guard : Signature.t -> loc -> pcontext -> pterm -> pterm -> pterm -> pterm t
 
 val new_meta : pcontext -> loc -> ident -> mkind -> pterm t
 

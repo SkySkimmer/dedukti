@@ -68,12 +68,12 @@ module type Meta = sig
 
   val whnf : Signature.t -> extra term -> extra term t
 
-  (* If ctx |- te : ty and ctx |- ty_exp : *, cast te to ty_exp *)
-  val cast : Signature.t -> jdg -> jdg -> jdg t
-  (* If ctx |- te : ty, cast te to some sort s *)
-  val cast_sort : Signature.t -> jdg -> jdg t
+  (* If ctx |- te : ty and ctx |- ty_exp : *, guard te to ty_exp *)
+  val guard : Signature.t -> jdg -> jdg -> jdg t
+  (* If ctx |- te : ty, guard te to some sort s *)
+  val guard_sort : Signature.t -> jdg -> jdg t
   (* if ctx |- te : ty1 -> ty2 and ctx |- te' : ty1 then ctx |- te te' : ty2 *)
-  val cast_app : Signature.t -> jdg -> jdg -> jdg t
+  val guard_app : Signature.t -> jdg -> jdg -> jdg t
 
   val infer_extra : (Signature.t -> ctx -> pextra term -> jdg t) -> (Signature.t -> pextra term -> jdg -> jdg t) ->
                     Signature.t -> ctx -> loc -> pextra tkind -> pextra -> jdg t

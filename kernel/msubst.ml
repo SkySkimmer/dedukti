@@ -64,6 +64,17 @@ let to_ground (sigma:t) (t:pretyped term) : typed term =
         end
     in aux t
 
+let rec head_delta sigma = function
+  | Extra (_,Pretyped,ex) as mt -> begin match extra_val sigma ex with
+      | Some mt' -> head_delta sigma mt'
+      | None -> mt
+      end
+  | App (Extra (_,Pretyped,ex),a,args) as t -> begin match extra_val sigma ex with
+      | Some mt' -> head_delta sigma (mk_App mt' a args)
+      | None -> t
+      end
+  | t -> t
+
 let rec whnf sg sigma t = match Reduction.whnf sg t with
   | Extra (_,Pretyped,ex) as mt -> begin match extra_val sigma ex with
       | Some mt' -> whnf sg sigma mt'

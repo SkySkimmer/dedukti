@@ -23,6 +23,8 @@ val to_ground : t -> pretyped term -> typed term
 val extra_val : t -> pretyped -> pretyped term option
 (** If the term is a metavariable and has a value in the substitution we apply it, otherwise return None. *)
 
+val head_delta : t -> pretyped term -> pretyped term
+
 val whnf : Signature.t -> t -> pretyped term -> pretyped term
 (** Recursively apply Reduction.whnf and extra_val on the term's head. *)
 

@@ -382,13 +382,23 @@ let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst
 
 (** Pair interface *)
 
-(* returns None if there are no (unsolved) disagreement pairs *)
-let inspect = get >>= fun pb -> match Problem.activate_nonempty pb with
-  | Some pb' -> begin match pb'.active with
-      | Some (_,x::_) -> set pb' >> return (Some x)
+(*
+Pre-processes pairs until a non trivial pair is found.
+Returns None if there are no (unsolved) disagreement pairs, fails with Not_Unifiable if a non unifiable pair is detected.
+*)
+let rec inspect sg = get >>= fun pb -> match Problem.activate_nonempty pb with
+  | None -> return None
+  | Some pb -> begin match pb.active with
+      | Some (g,p::rem) -> begin match process_pair sg pb.sigma p with
+          | None -> zero Not_Unifiable
+          | Some [] -> begin match rem with
+              | [] -> set {pb with sigma=S.guard_add pb.sigma g; active=None} >> inspect sg
+              | _ -> set {pb with active=Some (g,rem)} >> inspect sg
+              end
+          | Some (x::l) -> set {pb with active=Some (g,x::l@rem)} >> return (Some x)
+          end
       | _ -> assert false
       end
-  | None -> return None
 
 (*
 The first pair is used for f's argument.

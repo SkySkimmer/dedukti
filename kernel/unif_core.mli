@@ -47,7 +47,7 @@ val normalize : unit t
 
 
 (* returns Nothing if there are no (unsolved) disagreement pairs *)
-val inspect : pair option t
+val inspect : Signature.t -> pair option t
 
 type side = LEFT | RIGHT
 

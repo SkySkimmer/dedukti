@@ -203,10 +203,13 @@ let rec process_pair sg sigma (ctx,lop,rop) = let lop = S.head_delta sigma lop a
     | _,_ -> None (* both terms are rigid *)
 
 let add_guard sg lc ctx a b t = get >>= fun pb ->
-  let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
-  let t' = mk_Guard lc pb.gcpt lsubst t in
-  set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=pb.gpairs@[pb.gcpt,[ctx,a,b]] } >>
-  return t'
+  match process_pair sg pb.sigma (ctx,a,b) with
+    | None -> zero Not_Unifiable
+    | Some [] -> return t
+    | Some tpairs -> let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
+        let t' = mk_Guard lc pb.gcpt lsubst t in
+        set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=pb.gpairs@[pb.gcpt,tpairs] } >>
+        return t'
 
 let new_meta ctx lc s k = get >>= fun pb -> match k with
   | MSort -> let mj = mk_Meta lc s pb.mcpt [] in (* We can skip the context here since we know it's Type or Kind. Note that metas can become MSort without losing their context. *)

@@ -191,17 +191,22 @@ let rec solve sg = normalize >> (*effectful (fun () -> Printf.printf "Solve step
 
 let guard sg (ctx,te,ty) (_,ty_exp,_) = are_convertible sg ty ty_exp >>= function
   | true -> return (ctx,te,ty_exp)
-  | false -> add_guard sg (get_loc te) ctx ty ty_exp te >>= fun te' ->
+  | false -> plus (add_guard sg (get_loc te) ctx ty ty_exp te)
+                  (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e) >>= fun te' ->
       plus (once (solve sg) >> return (ctx,te',ty_exp))
            (function | Not_Unifiable -> zero (ConvertibilityError (te,ctx,ty_exp,ty)) | e -> zero e)
 
 let guard_sort sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
   | Kind | Type _ -> return jdg
   | _ -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
-      add_guard sg lc ctx ty ms te >>= fun te' ->
+      plus (add_guard sg lc ctx ty ms te)
+           (function | Not_Unifiable -> zero (SortExpected (te, ctx, ty)) | e -> zero e) >>= fun te' ->
       plus (once (solve sg) >> return (ctx,te',ms))
            (function | Not_Unifiable -> zero (SortExpected (te, ctx, ty)) | e -> zero e)
 
+(*
+te <> Guard Kind because Guard : a -> b and Kind has no type.
+*)
 let reject_kind sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
   | Kind -> zero (InexpectedKind (te, ctx))
   | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint lc s n >>= fun _ -> return ()

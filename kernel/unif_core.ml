@@ -160,10 +160,10 @@ let apply pb t = S.apply pb.sigma t
 let ground pb t = S.to_ground pb.sigma t
 
 (*
-We can catch new pairs in
-- add_pair
-- add_guard
-- pair_modify
+Trivial operations are applied on pairs in 2 places:
+- when a guard is created, to avoid an explicit guard on already-unified types.
+- when pairs are inspected.
+This means that applying operations without inspecting first may apply them on unprocessed pairs.
 *)
 
 let rigid_head sg = function

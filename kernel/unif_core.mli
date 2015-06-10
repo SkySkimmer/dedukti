@@ -72,10 +72,6 @@ val meta_delta : side -> unit t
 
 val step_reduce : Signature.t -> side -> unit t
 
-val meta_same_same : unit t
-
-val meta_same : unit t
-
 val split_app : int -> unit t
 
 (* NB: assumes the filter and the meta's pcontext have the same length. *)

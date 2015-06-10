@@ -447,7 +447,7 @@ Decompose the pair according to the common constructor of the terms:
 - etc
 *)
 
-let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
+let decompose = pair_modify (fun (ctx,t1,t2) -> match t1,t2 with
   | Kind, Kind | Type _, Type _ -> return []
   | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> return []
   | DB (_,_,n), DB (_,_,n') when (n=n') -> return []
@@ -467,20 +467,7 @@ let decompose = let pair_decompose (ctx,t1,t2) = match t1,t2 with
       return ((ctx,t,t')::(List.map2 (fun (_,t1) (_,t2) -> (ctx,t1,t2)) ts ts'))
   | App _, _ | _, App _ | Extra _, _ | _, Extra _ -> zero Not_Applicable
   | Const _, _ | _, Const _ -> zero Not_Applicable
-  | _, _ -> zero Not_Unifiable
-  in pair_modify pair_decompose
-
-let meta_same_same = pair_modify (fun (ctx,lop,rop) -> match lop,rop with
-  | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when (n=n') ->
-    let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
-      if b then return [] else zero Not_Applicable
-  | App (Extra (_,Pretyped,Meta(_,n,ts)),a,args), App (Extra (_,Pretyped,Meta(_,n',ts')),a',args') when (n=n') ->
-    let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> false in
-      if b then match try Some (List.map2 (fun t1 t2 -> ctx,t1,t2) (a::args) (a'::args')) with | Invalid_argument _ -> None with
-          | Some l -> return l
-          | None -> zero Not_Applicable
-          else zero Not_Applicable
-  | _,_ -> zero Not_Applicable)
+  | _, _ -> zero Not_Unifiable)
 
 (* Count occurences of true before index n, returning None if nth l n = false *)
 let sanitize_index l n = let rec aux n c = function
@@ -523,8 +510,6 @@ let rec sanitize_context s l ctx = match l,ctx with
   | [],[] -> [],[]
   | _,_ -> assert false
 
-let subst_intersection ts ts' = List.map2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
-
 let context_project l ctx = let rec aux n acc = function
   | true::l,(lc,x,_)::ctx -> aux (n+1) ((x,mk_DB lc x n)::acc) (l,ctx)
   | false::l,(lc,x,_)::ctx -> aux (n+1) acc (l,ctx)
@@ -546,20 +531,6 @@ let narrow_meta lc s n filter = meta_decl lc s n >>= fun (mctx,mty) ->
     | Extra (lc,Pretyped,Meta(s,k,_)) -> let mk = mk_Meta lc s k (context_project filter mctx) in
         set_meta n mk
     | _ -> assert false
-
-let meta_same = pair_modify (fun (ctx,lop,rop) -> begin match lop,rop with
-  | Extra (lc,Pretyped,Meta(s,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when (n=n') ->
-      return (lc,s,n,ts,ts',[],[])
-  | App (Extra (lc,Pretyped,Meta(s,n,ts)),a,args), App (Extra (_,Pretyped,Meta(_,n',ts')),a',args') when (n=n') ->
-      return (lc,s,n,ts,ts',a::args,a'::args')
-  | _,_ -> zero Not_Applicable
-  end >>= fun (lc,s,n,ts,ts',args,args') -> 
-  let inter = subst_intersection ts ts' in
-  narrow_meta lc s n inter >>
-  match try Some (List.map2 (fun a b -> ctx,a,b) args args') with | Invalid_argument _ -> None with
-    | Some l -> return l
-    | None -> zero Not_Applicable)
-
 
 (** REFINE and helpers *)
 

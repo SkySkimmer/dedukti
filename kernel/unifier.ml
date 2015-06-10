@@ -19,6 +19,35 @@ let meta_fo side (_,lop,rop) =
     | App (Extra (_,Pretyped,Meta _), _, args) -> split_app (1+List.length args)
     | _ -> zero Not_Applicable
 
+(** meta-same-same *)
+
+let meta_same_same sg (_,lop,rop) = match lop,rop with
+  | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,m,ts')) when (n=m) ->
+      let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> assert false in
+      if b then pair_convertible sg
+      else zero Not_Applicable
+  | App (Extra (_,Pretyped,Meta(_,n,ts)),_,_), App (Extra (_,Pretyped,Meta(_,m,ts')),_,_) when (n=m) ->
+      let b = try List.for_all2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts' with | Invalid_argument _ -> assert false in
+      if b then decompose
+        (* Pair pre-processing may remove the meta-meta pair. If it doesn't it will be handled by the next solve step. *)
+      else zero Not_Applicable
+  | _ -> zero Not_Applicable
+
+(** meta-same *)
+
+let subst_intersection ts ts' = List.map2 (fun (_,t1) (_,t2) -> term_eq t1 t2) ts ts'
+
+let meta_same sg (_,lop,rop) = match lop,rop with
+  | Extra (lc,Pretyped,Meta(s,n,ts)), Extra (_,Pretyped,Meta(_,m,ts')) when (n=m) ->
+      let filter = subst_intersection ts ts' in
+      narrow_meta lc s n filter >>
+      pair_convertible sg
+  | App (Extra (lc,Pretyped,Meta(s,n,ts)),_,_), App (Extra (_,Pretyped,Meta(_,m,ts')),_,_) when (n=m) ->
+      let filter = subst_intersection ts ts' in
+      narrow_meta lc s n filter >>
+      decompose
+  | _ -> zero Not_Applicable
+
 (** meta-inst *)
 
 let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
@@ -149,7 +178,7 @@ let fully_backtracking l = let rec aux = function
 let rec solve_pair sg p = fully_backtracking
   [ pair_convertible sg
   ; first_applicable [ meta_delta RIGHT; meta_delta LEFT ]
-  ; first_applicable [ meta_same_same; meta_same ]
+  ; first_applicable [ meta_same_same sg p; meta_same sg p ]
   ; meta_inst sg RIGHT p; meta_fo RIGHT p; meta_deldeps RIGHT p
   ; meta_inst sg LEFT  p; meta_fo LEFT  p; meta_deldeps LEFT  p
   ; decompose

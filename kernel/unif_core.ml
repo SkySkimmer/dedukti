@@ -178,8 +178,10 @@ let rec concat_opt = function
   | None::_ -> None
   | [] -> Some []
 
-(* Do trivial operations on a pair *)
-(* TODO: return ('a,'b) error where 'a = pair list and 'b = pair to indicate where non unifiability is *)
+(* Do trivial operations on a pair
+TODO: return ('a,'b) error where 'a = pair list and 'b = pair to indicate where non unifiability is.
+May not reduce terms: we call process_pair on possibly non typed pairs, eg a::ctx,b,b' in binder cases.
+ *)
 let rec process_pair sg sigma (ctx,lop,rop) = let lop = S.head_delta sigma lop and rop = S.head_delta sigma rop in
   if flexible_head sg lop || flexible_head sg rop then Some [(ctx,lop,rop)]
   else match lop,rop with

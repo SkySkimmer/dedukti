@@ -51,7 +51,7 @@ end = struct
       | Pi (_,_,a,b) -> guard sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
       | Extra  _ | App (Extra _,_,_) -> let (_,te_u,ty_u) = jdg_u in
-          let ctx2 = (dloc,empty,ty_u)::ctx in
+          let ctx2 = (dloc,empty,ty_u)::ctx in (* TODO: ctx_add *)
           new_meta ctx2 dloc empty MSort >>= fun ms ->
           new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
           guard sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->

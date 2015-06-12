@@ -235,9 +235,9 @@ let set_meta n t = get >>= fun pb ->
 let meta_constraint lc s n = meta_decl lc s n >>= function
   | (ctx,MTyped ty) -> return (ctx,ty)
   | (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
-      set_mdecl n (ctx,MTyped mk) >>= fun () -> return (ctx,mk)
-  | (ctx,MSort) -> set_mdecl n (ctx,MTyped mk_Kind) >>= fun () ->
-      set_meta n (mk_Type dloc) >>= fun () -> return (ctx,mk_Kind)
+      set_mdecl n (ctx,MTyped mk) >> return (ctx,mk)
+  | (ctx,MSort) -> set_mdecl n (ctx,MTyped mk_Kind) >>
+      set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)
 
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)

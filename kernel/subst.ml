@@ -29,7 +29,8 @@ let unshift q (te:'a term) : 'a term = apply_db (fun k -> function
 
 let rec psubst_l (args:('a term Lazy.t) LList.t) (k:int) (t:'a term) : 'a term =
   let nargs = args.LList.len in
-  apply_db (fun k -> function
+  if nargs = 0 then t
+  else apply_db (fun k -> function
     | DB (lc,x,n) when (n >= (k+nargs)) -> mk_DB lc x (n-nargs)
     | DB (_,_,n) as t when (n < k) -> t
     | DB (_,_,n) (* (k<=n<(k+nargs)) *) ->

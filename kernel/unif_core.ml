@@ -348,7 +348,6 @@ module Retyping = Elaboration(struct
       | _ -> zero (ProductExpected (te_f,ctx,ty_f))
 
   let guard_annot sg jdg = if !coc then guard_sort sg jdg else let (ctx,_,_) = jdg in guard sg jdg (ctx,mk_Type dloc,mk_Kind)
-  let new_meta_annot ctx lc s = if !coc then new_meta ctx lc s MSort else return (mk_Type lc)
 
   let ctx_add sg l x jdg = let ctx0 = jdg_ctx jdg in
     guard_annot sg jdg >>= fun jdg ->

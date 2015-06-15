@@ -232,12 +232,19 @@ let set_meta n t = get >>= fun pb ->
   if S.meta_mem pb.sigma n then zero Not_Applicable
   else set { pb with sigma=S.meta_add pb.sigma n t }
 
-let meta_constraint lc s n = meta_decl lc s n >>= function
+let rec meta_constraint lc s n = meta_decl lc s n >>= function
   | (ctx,MTyped ty) -> return (ctx,ty)
   | (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
-      set_mdecl n (ctx,MTyped mk) >> return (ctx,mk)
-  | (ctx,MSort) -> set_mdecl n (ctx,MTyped mk_Kind) >>
-      set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)
+      set_mdecl n (ctx,MTyped mk) >> return (ctx,mk) (* TODO: may be unsound *)
+  | (ctx,MSort) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
+      | Some Kind -> zero KindIsNotTypable
+      | Some (Type _) -> return (ctx,mk_Kind)
+      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint lc' s' n' >>= fun (_,ty') ->
+          return (ctx,lsubst_apply ts' ty')
+      | Some _ -> assert false
+      | None -> set_mdecl n (ctx,MTyped mk_Kind) >>
+        set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)
+      end
 
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)

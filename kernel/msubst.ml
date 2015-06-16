@@ -86,6 +86,36 @@ let rec whnf sg sigma t = match Reduction.whnf sg t with
       end
   | t0 -> t0
 
+let rec add_to_list2 l1 l2 lst =
+  match l1, l2 with
+    | [], [] -> Some lst
+    | s1::l1, s2::l2 -> add_to_list2 l1 l2 ((s1,s2)::lst)
+    | _,_ -> None
+
+let rec are_convertible_lst sg sigma : (pretyped term*pretyped term) list -> bool = function
+  | [] -> true
+  | (t1,t2)::lst ->
+    begin
+      match ( if term_eq t1 t2 then Some lst
+        else
+          match whnf sg sigma t1,whnf sg sigma t2 with
+          | Kind, Kind | Type _, Type _ -> Some lst
+          | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> Some lst
+          | DB (_,_,n), DB (_,_,n') when ( n==n' ) -> Some lst
+          | App (f,a,args), App (f',a',args') ->
+            add_to_list2 args args' ((f,f')::(a,a')::lst)
+          | Lam (_,_,_,b), Lam (_,_,_,b') -> Some ((b,b')::lst)
+          | Pi (_,_,a,b), Pi (_,_,a',b') -> Some ((a,a')::(b,b')::lst)
+          | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when ( n==n' ) ->
+              add_to_list2 (List.map snd ts) (List.map snd ts') lst
+          | t1, t2 -> None
+      ) with
+      | None -> false
+      | Some lst2 -> are_convertible_lst sg sigma lst2
+    end
+
+let are_convertible sg sigma t1 t2 = are_convertible_lst sg sigma [t1,t2]
+
 let normalize sigma = IntMap.map (apply sigma) (fst sigma),snd sigma
 
 let pp out (sigma,guards) =

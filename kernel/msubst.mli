@@ -28,6 +28,9 @@ val head_delta : t -> pretyped term -> pretyped term
 val whnf : Signature.t -> t -> pretyped term -> pretyped term
 (** Recursively apply Reduction.whnf and extra_val on the term's head. *)
 
+val are_convertible : Signature.t -> t -> pretyped term -> pretyped term -> bool
+(** Note: non pass-through guards are convertible only when syntactically equal. *)
+
 val normalize : t -> t
 
 val pp : out_channel -> t -> unit

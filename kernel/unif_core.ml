@@ -263,35 +263,7 @@ let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
 
 (** Retyping *)
 
-let rec add_to_list2 l1 l2 lst =
-  match l1, l2 with
-    | [], [] -> Some lst
-    | s1::l1, s2::l2 -> add_to_list2 l1 l2 ((s1,s2)::lst)
-    | _,_ -> None
-
-let rec are_convertible_lst sg : (pterm*pterm) list -> bool t = function
-  | [] -> return true
-  | (t1,t2)::lst ->
-    begin
-      ( if term_eq t1 t2 then return (Some lst)
-        else
-          whnf sg t1 >>= fun t1 -> whnf sg t2 >>= fun t2 -> match t1,t2 with
-          | Kind, Kind | Type _, Type _ -> return (Some lst)
-          | Const (_,m,v), Const (_,m',v') when ( ident_eq v v' && ident_eq m m' ) -> return (Some lst)
-          | DB (_,_,n), DB (_,_,n') when ( n==n' ) -> return (Some lst)
-          | App (f,a,args), App (f',a',args') ->
-            return (add_to_list2 args args' ((f,f')::(a,a')::lst))
-          | Lam (_,_,_,b), Lam (_,_,_,b') -> return (Some ((b,b')::lst))
-          | Pi (_,_,a,b), Pi (_,_,a',b') -> return (Some ((a,a')::(b,b')::lst))
-          | Extra (_,Pretyped,Meta(_,n,ts)), Extra (_,Pretyped,Meta(_,n',ts')) when ( n==n' ) ->
-              return (add_to_list2 (List.map snd ts) (List.map snd ts') lst)
-          | t1, t2 -> return None
-      ) >>= function
-      | None -> return false
-      | Some lst2 -> are_convertible_lst sg lst2
-    end
-
-let are_convertible sg t1 t2 = are_convertible_lst sg [(t1,t2)]
+let are_convertible sg t1 t2 = get >>= fun pb -> return (S.are_convertible sg pb.sigma t1 t2)
 
 module Retyping = Elaboration(struct
   type 'a tmp = 'a t

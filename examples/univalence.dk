@@ -17,7 +17,7 @@ eq : A : ? -> U A -> U A -> type.
 
 eq_refl : A : ? -> a : U A -> U (eq ? a a).
 
-`eq_rect : A : ? -> a : ? -> P : (b : U A -> e : U (eq ? a b) -> ?) -> U (P ? (eq_refl ? a)) -> y : U ? -> p : ? -> U (P y p).
+`eq_rect : A : ? -> a : U A -> P : (b : ? -> U (eq ? a b) -> ?) -> U (P ? (eq_refl ? a)) -> y : U ? -> p : ? -> U (P y p).
 
 [A : type, a : U A, P : (b : U A -> U (eq A a b) -> type), H : U (P a (eq_refl A a))] eq_rect A a P H a (eq_refl A a) --> H.
 
@@ -25,37 +25,37 @@ transport (A : ?) (P : ?) (x : U A) (y : ?) (e : ?) (H : U (P x)) : U (P y)
  := eq_rect ? x (a : ? => p : ? => P a) H ? e.
 
 eq_inverse (A : ?) (x : ?) (y : ?) (p : U (eq A x y)) : U (eq ? y x)
- := transport A (a : ? => eq ? a x) x y p (eq_refl A x).
+ := transport ? (a : ? => eq ? a x) ? ? p (eq_refl ? ?).
 
 ap (A : ?) (B : ?) (f : U (fun A B)) (x : ?) : y : ? -> p : U (eq ? x y) -> U (eq ? (f x) (f y))
- := eq_rect ? x (y : ? => p : ? => eq ? (f x) (f y)) (eq_refl ? (f x)).
+ := eq_rect ? ? (y : ? => p : ? => eq ? (f x) (f y)) (eq_refl ? (f x)).
 
-transport_const (A : type) (B : type) (x1 : U A) (x2 : U A) (p : U (eq A x1 x2)) (y : U B)
- : U (eq B (transport A (x : U A => B) x1 x2 p y) y)
- := eq_rect A x1 (x2 : U A => p : U (eq A x1 x2) => eq B (transport A (x : U A => B) x1 x2 p y) y) (eq_refl B y) x2 p.
+transport_const (A : ?) (B : ?) (x1 : U A) (x2 : ?) (p : U (eq ? x1 x2)) (y : U B)
+ : U (eq ? (transport ? (x : ? => B) ? ? p y) y)
+ := eq_rect ? ? (x2 : ? => p : ? => eq ? (transport ? (x : ? => B) ? ? p y) y) (eq_refl ? y) ? ?.
 
-test001 (A : type) (P : U A -> type) (x : U A) (H : U (P x)) : U (eq (P x) H (transport A P x x (eq_refl A x) H))
- := eq_refl (P x) H.
+test001 (A : ?) (P : U A -> type) (x : ?) (H : ?) : U (eq ? H (transport ? P ? ? (eq_refl ? x) H))
+ := eq_refl ? H.
 
 
-sigT : A : type -> P : (U A -> type) -> type.
+sigT : A : ? -> P : (U A -> type) -> type.
 
-existT : A : type -> P : (U A -> type) -> x : U A -> H : U (P x) -> U (sigT A P).
+existT : A : ? -> P : ? -> x : U A -> H : U (P x) -> U (sigT ? P).
 
-`sigT_rect : A : type -> P : (U A -> type) -> Q : (U (sigT A P) -> type) ->
-  (x : U A -> p : U (P x) -> U (Q (existT A P x p))) -> s : U (sigT A P) -> U (Q s).
+`sigT_rect : A : ? -> P : ? -> Q : ? ->
+  (x : U A -> p : U (P x) -> U (Q (existT ? P ? p))) -> s : U (sigT ? P) -> U (Q s).
 
 [A : type, P : (U A -> type), Q : (U (sigT A P) -> type), H : (x : U A -> p : U (P x) -> U (Q (existT A P x p))), x : U A, p : U (P x)]
   sigT_rect A P Q H (existT A P x p) --> H x p.
 
-pr1 (A : type) (P : (U A -> type)) (s : U (sigT A P)) : U A
- := sigT_rect A P (s : U (sigT A P) => A) (x : U A => p : U (P x) => x) s.
+pr1 (A : ?) (P : ?) (s : U (sigT ? P)) : U A
+ := sigT_rect ? ? (s : ? => A) (x : U A => p : ? => x) s.
 
-pr2 (A : type) (P : (U A -> type)) (s : U (sigT A P)) : U (P (pr1 A P s))
- := sigT_rect A P (s : U (sigT A P) => P (pr1 A P s)) (x : U A => p : U (P x) => p) s. 
+pr2 (A : ?) (P : ?) (s : U (sigT ? P)) : ?
+ := sigT_rect ? ? (s : ? => P (pr1 ? ? s)) (x : U A => p : ? => p) s. 
 
-sigT_eta (A : type) (P : (U A -> type)) : s : U (sigT A P) -> U (eq (sigT A P) (existT A P (pr1 A P s) (pr2 A P s)) s)
- := sigT_rect A P (s : U (sigT A P) => eq (sigT A P) (existT A P (pr1 A P s) (pr2 A P s)) s)
+sigT_eta (A : ?) (P : ?) : s : U (sigT A P) -> U (eq ? (existT ? ? ? (pr2 ? ? s)) s)
+ := sigT_rect ? ? (s : ? => eq ? (existT ? ? (? ? ? s) (pr2 ? ? s)) s)
               (x : U A => p : U (P x) => eq_refl (sigT A P) (existT A P x p)).
 
 (;

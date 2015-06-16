@@ -180,32 +180,38 @@ let rec concat_opt = function
 
 (* Do trivial operations on a pair
 TODO: return ('a,'b) error where 'a = pair list and 'b = pair to indicate where non unifiability is.
-May not reduce terms: we call process_pair on possibly non typed pairs, eg a::ctx,b,b' in binder cases.
+Does not reduce terms
  *)
-let rec process_pair sg sigma (ctx,lop,rop) = let lop = S.head_delta sigma lop and rop = S.head_delta sigma rop in
-  if flexible_head sg lop || flexible_head sg rop then Some [(ctx,lop,rop)]
-  else match lop,rop with
-    | Kind, Kind | Type _, Type _ -> Some []
-    | DB (_,_,n), DB (_,_,m) when (n=m) -> Some []
-    | Const (_,m,v), Const (_,m',v') when (ident_eq m m' && ident_eq v v') ->
-        Some []
-    | App (Const (_,m,v),a,args), App (Const (_,m',v'),a',args') when (ident_eq m m' && ident_eq v v') ->
-        begin try concat_opt (List.map2 (fun a b -> process_pair sg sigma (ctx,a,b)) (a::args) (a'::args'))
-        with | Invalid_argument _ -> None
+let process_rigid ctx lop rop = match lop,rop with
+  | Kind, Kind | Type _, Type _ -> Some []
+  | DB (_,_,n), DB (_,_,m) when (n=m) -> Some []
+  | Const (_,m,v), Const (_,m',v') when (ident_eq m m' && ident_eq v v') ->
+      Some []
+  | App (Const (_,m,v),a,args), App (Const (_,m',v'),a',args') when (ident_eq m m' && ident_eq v v') ->
+      begin try Some (List.map2 (fun a b -> (ctx,a,b)) (a::args) (a'::args'))
+      with | Invalid_argument _ -> None
+      end
+  | App (DB (_,_,n),a,args), App (DB (_,_,m),a',args') when (n=m) ->
+      begin try Some (List.map2 (fun a b -> (ctx,a,b)) (a::args) (a'::args'))
+      with | Invalid_argument _ -> None
+      end
+  | Pi (lc,x,a,b), Pi (_,_,a',b') -> Some [(ctx,a,a');((lc,x,a)::ctx,b,b')]
+  | Lam (lc,x,Some a,b), Lam (_,_,Some a',b') -> Some [(ctx,a,a');((lc,x,a)::ctx,b,b')]
+  | Lam _, Lam _ -> failwith "TODO: process_pair on domain free lambdas"
+  | _,_ -> None (* both terms are rigid *)
+
+let rec process_pairs sg sigma = function
+  | [] -> Some []
+  | (ctx,lop,rop)::rem -> let lop = S.head_delta sigma lop and rop = S.head_delta sigma rop in
+      if flexible_head sg lop || flexible_head sg rop
+      then if S.are_convertible sg sigma lop rop then process_pairs sg sigma rem else Some ((ctx,lop,rop)::rem)
+      else begin match process_rigid ctx lop rop with
+        | None -> None
+        | Some l -> process_pairs sg sigma (List.append l rem)
         end
-    | App (DB (_,_,n),a,args), App (DB (_,_,m),a',args') when (n=m) ->
-        begin try concat_opt (List.map2 (fun a b -> process_pair sg sigma (ctx,a,b)) (a::args) (a'::args'))
-        with | Invalid_argument _ -> None
-        end
-    | Pi (lc,x,a,b), Pi (_,_,a',b') ->
-        bind_opt (fun l -> bind_opt (fun l' -> Some (l@l')) (process_pair sg sigma ((lc,x,a)::ctx,b,b'))) (process_pair sg sigma (ctx,a,a'))
-    | Lam (lc,x,Some a,b), Lam (_,_,Some a',b') ->
-        bind_opt (fun l -> bind_opt (fun l' -> Some (l@l')) (process_pair sg sigma ((lc,x,a)::ctx,b,b'))) (process_pair sg sigma (ctx,a,a'))
-    | Lam _, Lam _ -> failwith "TODO: process_pair on domain free lambdas"
-    | _,_ -> None (* both terms are rigid *)
 
 let add_guard sg lc ctx a b t = get >>= fun pb ->
-  match process_pair sg pb.sigma (ctx,a,b) with
+  match process_pairs sg pb.sigma [ctx,a,b] with
     | None -> zero Not_Unifiable
     | Some [] -> return t
     | Some tpairs -> let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
@@ -367,13 +373,10 @@ Returns None if there are no (unsolved) disagreement pairs, fails with Not_Unifi
 let rec inspect sg = get >>= fun pb -> match Problem.activate_nonempty pb with
   | None -> return None
   | Some pb -> begin match pb.active with
-      | Some (g,p::rem) -> begin match process_pair sg pb.sigma p with
+      | Some (g,pairs) -> begin match process_pairs sg pb.sigma pairs with
           | None -> zero Not_Unifiable
-          | Some [] -> begin match rem with
-              | [] -> set {pb with sigma=S.guard_add pb.sigma g; active=None} >> inspect sg
-              | _ -> set {pb with active=Some (g,rem)} >> inspect sg
-              end
-          | Some (x::l) -> set {pb with active=Some (g,x::l@rem)} >> return (Some x)
+          | Some [] -> set {pb with sigma=S.guard_add pb.sigma g; active=None} >> inspect sg
+          | Some ((p::_) as pairs) -> set {pb with active=Some (g,pairs)} >> return (Some p)
           end
       | _ -> assert false
       end

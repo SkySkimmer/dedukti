@@ -111,8 +111,9 @@ let pp_active out = function
   | Some(n,l) -> Printf.fprintf out "ACTIVE: %a\n" pp_gpair (n,l)
 
 let pp_problem out pb = Printf.fprintf out "{ mcpt=%i; gcpt=%i;\n%a\n%a\n%a\n%a\n%a\n }\n" pb.mcpt pb.gcpt
-    pp_mdecls pb.mdecls S.pp pb.sigma
-    pp_gdecls pb.gdecls pp_gpairs pb.gpairs
+    pp_mdecls pb.mdecls pp_gdecls pb.gdecls
+    S.pp pb.sigma
+    pp_gpairs pb.gpairs
     pp_active pb.active
 
 let pp_state = get >>= fun pb -> effectful (fun () ->

@@ -386,6 +386,10 @@ module Retyping = Elaboration(struct
         return (ctx,mk_Guard lc n ts' t',lsubst_apply ts' gty_out)
 end)
 
+let check_subst sg ctx ts mctx =
+  fold (fun ts' ((x,t),(_,_,ty)) -> Retyping.check sg t (ctx,lsubst_apply ts' ty,mk_Type dloc (* (x) *)) >>= fun (_,t',_) ->
+    return ((x,t')::ts')) [] (List.rev_map2 (fun x y -> x,y) ts mctx)
+
 (** Pair interface *)
 
 (*
@@ -577,9 +581,9 @@ let refine sg lc s n t = if meta_occurs n t
       | MType -> begin match t with
         | Kind -> set_mdecl n (ctx,MSort) >> set_meta n t
         | Type _ -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n t
-        | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function (* TODO: check_subst *)
-            | (_,MType) -> set_meta n t
-            | (_,MSort) -> set_mdecl n (ctx,MSort) >> set_meta n t
+        | Extra (lc',Pretyped,Meta(s',x,ts)) -> meta_decl lc' s' x >>= begin function
+            | (ctx',MType) -> check_subst sg ctx ts ctx' >>= fun ts' -> set_meta n (mk_Meta lc' s' x ts')
+            | (ctx',MSort) -> check_subst sg ctx ts ctx' >>= fun ts' -> set_mdecl n (ctx,MSort) >> set_meta n (mk_Meta lc' s' x ts')
             | (_,MTyped _) -> new_meta ctx lc s MSort >>= fun ms ->
                 set_mdecl n (ctx,MTyped ms) >>
                 Retyping.infer sg ctx t >>= fun jdg ->
@@ -593,20 +597,16 @@ let refine sg lc s n t = if meta_occurs n t
       | MSort -> begin match t with
           | Kind -> set_meta n t
           | Type _ -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n t
-          | Extra (lc',Pretyped,Meta(s',x,_)) -> meta_decl lc' s' x >>= begin function (* TODO: check_subst *)
-              | (mctx',MType) -> set_mdecl x (mctx',MSort) >> set_meta n t
-              | (_,MSort) -> set_meta n t
-              | (_,MTyped _) -> Retyping.infer sg ctx t >>= fun (_,t',ty) ->
+          | Extra (lc',Pretyped,Meta(s',x,ts)) -> meta_decl lc' s' x >>= begin function
+              | (mctx',MType) -> check_subst sg ctx ts mctx' >>= fun ts' -> set_mdecl x (mctx',MSort) >> set_meta n (mk_Meta lc' s' x ts')
+              | (mctx',MSort) -> check_subst sg ctx ts mctx' >>= fun ts' -> set_meta n (mk_Meta lc' s' x ts')
+              | (_,MTyped _) -> Retyping.infer sg ctx t >>= fun (_,t',ty) -> (* maybe ?x := Type *)
                   are_convertible sg t' (mk_Type dloc) >>= begin function
                     | true -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n (mk_Type lc)
                     | false -> zero (SortExpected (t,ctx,t))
                     end
               end
-          | _ -> Retyping.infer sg ctx t >>= fun (_,t',ty) -> (* TODO: improve this *)
-              are_convertible sg t' (mk_Type dloc) >>= begin function
-                | true -> set_mdecl n (ctx,MTyped mk_Kind) >> set_meta n (mk_Type lc)
-                | false -> zero (SortExpected (t,ctx,t))
-                end
+          | _ -> zero (SortExpected (t,ctx,t))
           end
       end
 

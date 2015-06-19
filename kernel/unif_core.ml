@@ -314,8 +314,7 @@ module Retyping = Elaboration(struct
     | Kind | Type _ -> return jdg
     | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_decl lc s n >>= fun (mctx,mty) -> begin match mty with
         | MSort -> return jdg
-        | MType -> set_mdecl n (mctx,MSort) >> return jdg
-        | MTyped mty -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
+        | _ -> let lc = get_loc te in new_meta ctx lc (hstring "Sort") MSort >>= fun ms ->
             add_guard sg lc ctx ty ms te >>= fun te' ->
             return (ctx,te',ms)
         end

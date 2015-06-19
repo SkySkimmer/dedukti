@@ -55,7 +55,7 @@ pr2 (A : ?) (P : ?) (s : U (sigT ? P)) : ?
  := sigT_rect ? ? (s : ? => P (pr1 ? ? s)) (x : U A => p : ? => p) s. 
 
 sigT_eta (A : type) (P : U A -> type) : s : U (sigT A P) -> U (eq (sigT A P) (existT A P (? A P s) (pr2 A P s)) s)
- := sigT_rect A P (s : U (sigT A P) => eq (sigT A P) (existT A P (? A ? s) (pr2 A P s)) s)
+ := sigT_rect A P (s : U (sigT A P) => eq (sigT A P) (existT A P (pr1 A ? s) (pr2 A P s)) s)
               (x : U A => p : U (P x) => eq_refl (sigT A P) (existT A P x p)).
 
 (;

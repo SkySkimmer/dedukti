@@ -132,17 +132,6 @@ module Problem = struct
     | Some (m,l) when (n=m) -> l
     | _ -> try let (_,l) = List.find (fun (m,_) -> n=m) pb.gpairs in l with | Not_found -> raise (TypingError (UnknownGuard (lc,n)))
   
-  (* Removes the first element matching p from l. *)
-  let list_pop p l = let rec aux acc = function
-    | x::l -> if p x then x,List.rev_append acc l
-              else aux (x::acc) l
-    | [] -> raise Not_found
-    in aux [] l
-  
-  let is_active_guard pb n = match pb.active with
-    | Some (m,_) when (n=m) -> true
-    | _ -> false
-
   let activate_nonempty pb = match pb.active with
     | Some _ -> Some pb
     | None -> begin match pb.gpairs with
@@ -173,11 +162,6 @@ let rigid_head sg = function
   | _ -> true
 
 let flexible_head sg t = not (rigid_head sg t)
-
-let rec concat_opt = function
-  | (Some x)::l -> bind_opt (fun l -> Some (x@l)) (concat_opt l)
-  | None::_ -> None
-  | [] -> Some []
 
 (* Do trivial operations on a pair
 TODO: return ('a,'b) error where 'a = pair list and 'b = pair to indicate where non unifiability is.
@@ -239,15 +223,34 @@ let set_meta n t = get >>= fun pb ->
   if S.meta_mem pb.sigma n then zero Not_Applicable
   else set { pb with sigma=S.meta_add pb.sigma n t }
 
+(*
+Problematic scenario:
+?x : *
+?y : *
+set ?x := ?y (no decl changes)
+set ?y := Pi nat nat (?y : Type)
+normalize (?x := Pi nat nat, but ?x : * )
+*)
 let rec meta_constraint lc s n = meta_decl lc s n >>= function
   | (ctx,MTyped ty) -> return (ctx,ty)
-  | (ctx,MType) -> new_meta ctx lc s MSort >>= fun mk ->
-      set_mdecl n (ctx,MTyped mk) >> return (ctx,mk) (* TODO: may be unsound *)
+  | (ctx,MType) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
+      | Some Kind -> zero KindIsNotTypable
+      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
+      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint lc' s' n' >>= fun (_,ty') ->
+          let ty = lsubst_apply ts' ty' in
+          set_mdecl n (ctx,MTyped ty) >>
+          return (ctx,ty)
+      | Some mt -> assert false(* mt is not a sort, so it has a type. *)
+      | None -> new_meta ctx lc s MSort >>= fun mk ->
+          set_mdecl n (ctx,MTyped mk) >> return (ctx,mk)
+      end
   | (ctx,MSort) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
       | Some Kind -> zero KindIsNotTypable
-      | Some (Type _) -> return (ctx,mk_Kind)
+      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
       | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint lc' s' n' >>= fun (_,ty') ->
-          return (ctx,lsubst_apply ts' ty')
+          let ty = lsubst_apply ts' ty' in
+          set_mdecl n (ctx,MTyped ty) >>
+          return (ctx,ty)
       | Some _ -> assert false
       | None -> set_mdecl n (ctx,MTyped mk_Kind) >>
         set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)

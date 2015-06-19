@@ -49,9 +49,12 @@ end = struct
     whnf sg ty_f >>= function
       | Pi (_,_,a,b) -> guard sg jdg_u (ctx,a,mk_Type dloc (* (x) *)) >>= fun (_,te_u,_) ->
           return (ctx,mk_App te_f te_u [],Subst.subst b te_u)
-      | Extra  _ | App (Extra _,_,_) ->
+      | Extra  _ | App (Extra _,_,_) -> (* ctx |- u : tu and we want to form tu::ctx. Then we guard #tu : Type and #u : #tu and use #tu::ctx. *)
           let (_,te_u,ty_u) = jdg_u in
-          let ctx2 = (dloc,empty,ty_u)::ctx in (* TODO: ctx_add *)
+          expected_type sg ctx ty_u >>= fun s ->
+          guard_annot sg (ctx,ty_u,s) >>= fun jdg_ty_u ->
+          guard sg jdg_u jdg_ty_u >>= fun (_,te_u,ty_u) ->
+          let ctx2 = (dloc,empty,ty_u)::ctx in
           new_meta ctx2 dloc empty MSort >>= fun ms ->
           new_meta ctx2 dloc empty (MTyped ms) >>= fun mk ->
           guard sg jdg_f (ctx,mk_Pi dloc empty ty_u mk,mk_Type dloc (* (x) *)) >>= fun (_,te_f,_) ->

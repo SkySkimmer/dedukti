@@ -45,6 +45,9 @@ val are_convertible : Signature.t -> pterm -> pterm -> bool t
 
 val normalize : unit t
 
+(* Only call this on terms known to have a type modulo some meta_constraint calls *)
+val expected_type : Signature.t -> pcontext -> pterm -> pterm t
+
 
 (* returns Nothing if there are no (unsolved) disagreement pairs *)
 val inspect : Signature.t -> pair option t

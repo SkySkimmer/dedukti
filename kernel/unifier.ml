@@ -209,6 +209,6 @@ te <> Guard Kind because Guard : a -> b and Kind has no type.
 *)
 let reject_kind sg jdg = let (ctx,te,ty) = jdg in whnf sg ty >>= function
   | Kind -> zero (InexpectedKind (te, ctx))
-  | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint lc s n >>= fun _ -> return ()
+  | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint sg lc s n >>= fun _ -> return ()
   | _ -> return ()
 

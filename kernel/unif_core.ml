@@ -223,39 +223,6 @@ let set_meta n t = get >>= fun pb ->
   if S.meta_mem pb.sigma n then zero Not_Applicable
   else set { pb with sigma=S.meta_add pb.sigma n t }
 
-(*
-Problematic scenario:
-?x : *
-?y : *
-set ?x := ?y (no decl changes)
-set ?y := Pi nat nat (?y : Type)
-normalize (?x := Pi nat nat, but ?x : * )
-*)
-let rec meta_constraint lc s n = meta_decl lc s n >>= function
-  | (ctx,MTyped ty) -> return (ctx,ty)
-  | (ctx,MType) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
-      | Some Kind -> zero KindIsNotTypable
-      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
-      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint lc' s' n' >>= fun (_,ty') ->
-          let ty = lsubst_apply ts' ty' in
-          set_mdecl n (ctx,MTyped ty) >>
-          return (ctx,ty)
-      | Some mt -> assert false(* mt is not a sort, so it has a type. *)
-      | None -> new_meta ctx lc s MSort >>= fun mk ->
-          set_mdecl n (ctx,MTyped mk) >> return (ctx,mk)
-      end
-  | (ctx,MSort) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
-      | Some Kind -> zero KindIsNotTypable
-      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
-      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint lc' s' n' >>= fun (_,ty') ->
-          let ty = lsubst_apply ts' ty' in
-          set_mdecl n (ctx,MTyped ty) >>
-          return (ctx,ty)
-      | Some _ -> assert false
-      | None -> set_mdecl n (ctx,MTyped mk_Kind) >>
-        set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)
-      end
-
 
 let whnf sg t = get >>= fun pb -> return (S.whnf sg pb.sigma t)
 
@@ -273,6 +240,65 @@ let normalize = modify (fun pb -> let s = S.normalize pb.sigma in
 
 (** Retyping *)
 
+let ctx_get_type ctx l x n =
+  try
+    let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty
+  with Failure _ ->
+    Pervasives.raise (TypingError (VariableNotFound (l,x,n,ctx)))
+
+(* Only call this on terms known to be typed. *)
+let rec expected_type sg ctx = function
+  | Kind -> assert false
+  | Type _ -> return mk_Kind
+  | DB (l,x,n) -> return (ctx_get_type ctx l x n)
+  | Const (l,md,id) -> return (lift_term (Signature.get_type sg l md id))
+  | App (f,a,args) -> expected_type sg ctx f >>= fun ty -> apply_type sg ty (a::args)
+  | Lam (lc,x,Some a,t) -> expected_type sg ((lc,x,a)::ctx) t >>= fun ty -> return (mk_Pi lc x a ty)
+  | Lam _ -> assert false
+  | Pi (_,_,_,b) -> expected_type sg ctx b
+  | Extra (lc,Pretyped,Meta(s,n,ts)) -> meta_constraint sg lc s n >>= fun (_,ty) -> return (lsubst_apply ts ty)
+  | Extra (lc,Pretyped,Guard(n,ts,t)) -> guard_decl lc n >>= fun (_,_,b) -> return (lsubst_apply ts b)
+
+and apply_type sg ty = function
+  | [] -> return ty
+  | a::args -> whnf sg ty >>= begin function
+      | Pi (_,_,_,b) -> apply_type sg (Subst.subst b a) args
+      | _ -> assert false
+      end
+
+(*
+Problematic scenario:
+?x : *
+?y : *
+set ?x := ?y (no decl changes)
+set ?y := Pi nat nat (?y : Type)
+normalize (?x := Pi nat nat, but ?x : * )
+*)
+and meta_constraint sg lc s n = meta_decl lc s n >>= function
+  | (ctx,MTyped ty) -> return (ctx,ty)
+  | (ctx,MType) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
+      | Some Kind -> zero KindIsNotTypable
+      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
+      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint sg lc' s' n' >>= fun (_,ty') ->
+          let ty = lsubst_apply ts' ty' in
+          set_mdecl n (ctx,MTyped ty) >>
+          return (ctx,ty)
+      | Some mt -> expected_type sg ctx mt >>= fun ty -> return (ctx,ty)
+      | None -> new_meta ctx lc s MSort >>= fun mk ->
+          set_mdecl n (ctx,MTyped mk) >> return (ctx,mk)
+      end
+  | (ctx,MSort) -> get >>= fun pb -> begin match S.extra_val pb.sigma (Meta (s,n,[])) with
+      | Some Kind -> zero KindIsNotTypable
+      | Some (Type _) -> set_mdecl n (ctx,MTyped mk_Kind) >> return (ctx,mk_Kind)
+      | Some (Extra (lc',Pretyped,Meta(s',n',ts'))) -> meta_constraint sg lc' s' n' >>= fun (_,ty') ->
+          let ty = lsubst_apply ts' ty' in
+          set_mdecl n (ctx,MTyped ty) >>
+          return (ctx,ty)
+      | Some _ -> assert false
+      | None -> set_mdecl n (ctx,MTyped mk_Kind) >>
+        set_meta n (mk_Type dloc) >> return (ctx,mk_Kind)
+      end
+
 let are_convertible sg t1 t2 = get >>= fun pb -> return (S.are_convertible sg pb.sigma t1 t2)
 
 module Retyping = Elaboration(struct
@@ -288,11 +314,7 @@ module Retyping = Elaboration(struct
   type ctx = pcontext
   type jdg = pcontext*pterm*pterm
 
-  let  get_type ctx l x n =
-    try
-      let (_,_,ty) = List.nth ctx n in Subst.shift (n+1) ty
-    with Failure _ ->
-      Pervasives.raise (TypingError (VariableNotFound (l,x,n,ctx)))
+  let get_type = ctx_get_type
 
   let judge ctx te ty = (ctx,te,ty)
   let jdg_ctx (ctx,_,_) = ctx
@@ -345,7 +367,7 @@ module Retyping = Elaboration(struct
 
   let reject_kind sg (ctx,te,ty) = whnf sg ty >>= function
     | Kind -> zero (InexpectedKind (te, ctx))
-    | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint lc s n >>= fun _ -> return ()
+    | Extra (lc,Pretyped,Meta(s,n,_)) -> meta_constraint sg lc s n >>= fun _ -> return ()
     | _ -> return ()
 
   let whnf = whnf
@@ -355,7 +377,7 @@ module Retyping = Elaboration(struct
         return ((x,t')::ts')) [] (List.rev_map2 (fun x y -> x,y) ts mctx)
 
   let infer_extra infer check sg ctx lc Pretyped = function
-    | Meta (s,n,ts) -> meta_constraint lc s n >>= fun (mctx,mty) ->
+    | Meta (s,n,ts) -> meta_constraint sg lc s n >>= fun (mctx,mty) ->
         check_subst check sg ctx ts mctx >>= fun ts' ->
         return (ctx,mk_Meta lc s n ts',lsubst_apply ts' mty)
     | Guard (n,ts,t) -> guard_decl lc n >>= fun (gctx,gty_in,gty_out) ->
@@ -363,9 +385,6 @@ module Retyping = Elaboration(struct
         check sg t (ctx,lsubst_apply ts' gty_in,mk_Type dloc (* (x) *)) >>= fun (ctx,t',_) ->
         return (ctx,mk_Guard lc n ts' t',lsubst_apply ts' gty_out)
 end)
-
-let var_get_type ctx lc x n = try let (_,_,ty) = List.nth ctx n in return (Subst.shift (n+1) ty)
-  with | Failure _ -> raise (TypingError (VariableNotFound (lc,x,n,ctx)))
 
 (** Pair interface *)
 

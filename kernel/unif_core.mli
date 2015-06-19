@@ -33,7 +33,7 @@ val add_guard : Signature.t -> loc -> pcontext -> pterm -> pterm -> pterm -> pte
 
 val new_meta : pcontext -> loc -> ident -> mkind -> pterm t
 
-val meta_constraint : loc -> ident -> int -> (pcontext*pterm) t
+val meta_constraint : Signature.t -> loc -> ident -> int -> (pcontext*pterm) t
 
 val meta_decl : loc -> ident -> int -> (pcontext*mkind) t
 

@@ -99,7 +99,7 @@ let rec invert_term x vars q = function
               )) ([],true) ts >>= fun (ts',clean) ->
               if clean then return (mk_Meta lc s y (List.rev_map (function | Some x -> x | None -> assert false) ts'))
               else prune lc s y (List.rev ts')
-        | Guard(n,ts,t) -> (* TODO: maybe prune *)
+        | Guard(n,ts,t) ->
             fold (fun l (y,t) -> invert_term x vars q t >>= fun t' -> return ((y,t')::l)) [] (List.rev ts) >>= fun ts' ->
             invert_term x vars q t >>= fun t' ->
             return (mk_Guard lc n ts' t')

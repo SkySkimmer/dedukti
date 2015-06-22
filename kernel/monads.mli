@@ -101,6 +101,7 @@ module StateF (M:Monad) (S:sig type state end) : sig
 
   module EffectT(E:EffectS with type 'a t = 'a M.t) : EffectS with type 'a t := 'a t
 
+  (** Split operator not implemented. *)
   module BacktrackT(B:BacktrackS with type 'a t = 'a M.t) : BacktrackS with type 'a t := 'a t and type err = B.err
   
   val run : 'a t -> state -> ('a*state) M.t

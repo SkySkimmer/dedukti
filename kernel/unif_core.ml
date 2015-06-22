@@ -200,7 +200,7 @@ let add_guard sg lc ctx a b t = get >>= fun pb ->
     | None -> zero Not_Unifiable
     | Some [] -> return t
     | Some tpairs -> let lsubst = List.mapi (fun i (_,x,_) -> x,mk_DB dloc x i) ctx in
-        let t' = mk_Guard lc pb.gcpt lsubst t in
+        let t' = mk_Guard lc pb.gcpt lsubst t in (* TODO: remove extra dependencies *)
         set { pb with gcpt=pb.gcpt+1; gdecls=IntMap.add pb.gcpt (ctx,a,b) pb.gdecls; gpairs=pb.gpairs@[pb.gcpt,tpairs] } >>
         return t'
 
@@ -302,6 +302,8 @@ and meta_constraint sg lc s n = meta_decl lc s n >>= function
 let are_convertible sg t1 t2 = get >>= fun pb -> return (S.are_convertible sg pb.sigma t1 t2)
 
 module Retyping = Elaboration(struct
+  (** Workaround for always recursive type declarations                    *
+   ** Fixed in ocaml 4.02.2 (http://caml.inria.fr/mantis/view.php?id=6016) *)
   type 'a tmp = 'a t
   type 'a t = 'a tmp
   

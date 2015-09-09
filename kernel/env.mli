@@ -26,20 +26,20 @@ val get_dtree   : loc -> ident -> ident -> ((int*Rule.dtree) option,signature_er
 val export      : unit -> bool
 (** [export ()] saves the current environment in a [*.dko] file*)
 
-val declare_constant : loc -> ident -> untyped term -> (unit,env_error) error
+val declare_constant : loc -> ident -> untyped term -> (typed term,env_error) error
 (** [declare_constant l id ty] declares the constant symbol [id] of type [ty]. *)
 
-val declare_definable : loc -> ident -> untyped term -> (unit,env_error) error
+val declare_definable : loc -> ident -> untyped term -> (typed term,env_error) error
 (** [declare_definable l id ty] declares the definable symbol [id] of type [ty]. *)
 
-val define      : loc -> ident -> untyped term -> untyped term option -> (unit,env_error) error
+val define      : loc -> ident -> untyped term -> untyped term option -> ((typed term * typed term),env_error) error
 (** [define l id body ty] defined the symbol [id] of type [ty] to be an alias of [body]. *)
 
-val define_op   : loc -> ident -> untyped term -> untyped term option -> (unit,env_error) error
+val define_op   : loc -> ident -> untyped term -> untyped term option -> ((typed term * typed term),env_error) error
 (** [define_op l id body ty] declares the symbol [id] of type [ty] and checks
 * that [body] has this type (but forget it after). *)
 
-val add_rules   : Rule.rule list -> (unit,env_error) error
+val add_rules   : Rule.rule list -> (Rule.rule list,env_error) error
 (** [add_rules rule_lst] adds a list of rule to a symbol. All rules must be on the
   * same symbol. *)
 

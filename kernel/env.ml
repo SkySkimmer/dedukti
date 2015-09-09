@@ -28,35 +28,37 @@ let get_dtree l md id =
 
 let export () : bool = Signature.export !sg
 
-let _declare_constant (l:loc) (id:ident) (jdg:judgment) : unit =
+let _declare_constant (l:loc) (id:ident) (jdg:judgment) : typed term =
   assert ( Context.is_empty jdg.ctx );
   match jdg.ty with
-    | Kind | Type _ -> Signature.add_declaration !sg l id jdg.te
+    | Kind | Type _ -> Signature.add_declaration !sg l id jdg.te; jdg.te
     | _ -> raise (TypingError (SortExpected (jdg.te,[],jdg.ty)))
 
-let _declare_definable (l:loc) (id:ident) (jdg:judgment) : unit =
+let _declare_definable (l:loc) (id:ident) (jdg:judgment) : typed term =
   assert ( Context.is_empty jdg.ctx );
   match jdg.ty with
-    | Kind | Type _ -> Signature.add_definable !sg l id jdg.te
+    | Kind | Type _ -> Signature.add_definable !sg l id jdg.te; jdg.te
     | _ -> raise (TypingError (SortExpected (jdg.te,[],jdg.ty)))
 
 let _define (l:loc) (id:ident) (jdg:judgment) =
   assert ( Context.is_empty jdg.ctx );
   assert ( match jdg.ty with Kind -> false | _ -> true );
   Signature.add_definable !sg l id jdg.ty;
-  Signature.add_rules !sg [([],Pattern (l,get_name (),id,[]),jdg.te)]
+  Signature.add_rules !sg [([],Pattern (l,get_name (),id,[]),jdg.te)];
+  jdg.te,jdg.ty
 
 let _define_op (l:loc) (id:ident) (jdg:judgment) =
   assert( Context.is_empty jdg.ctx );
-  Signature.add_declaration !sg l id jdg.ty
+  Signature.add_declaration !sg l id jdg.ty;
+  jdg.te,jdg.ty
 
-let declare_constant l id ty : (unit,env_error) error =
+let declare_constant l id ty : (typed term,env_error) error =
   try OK ( _declare_constant l id (Refine.inference !sg ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
-let declare_definable l id ty : (unit,env_error) error =
+let declare_definable l id ty : (typed term,env_error) error =
   try OK ( _declare_definable l id (Refine.inference !sg ty) )
   with
     | SignatureError e -> Err (EnvErrorSignature e)
@@ -86,10 +88,10 @@ let define_op l id te ty_opt =
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)
 
-let add_rules (rules: rule list) : (unit,env_error) error =
+let add_rules (rules: rule list) : (rule list,env_error) error =
   try
     let _ = List.iter (Refine.check_rule !sg) rules in
-      OK (Signature.add_rules !sg rules)
+      OK (Signature.add_rules !sg rules; rules)
   with
     | SignatureError e -> Err (EnvErrorSignature e)
     | TypingError e -> Err (EnvErrorType e)

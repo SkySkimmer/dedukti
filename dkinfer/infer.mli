@@ -1,5 +1,5 @@
 (** Dedukti's main functionnalities. *)
-open Basics
+open Basic
 open Term
 
 val out             : Format.formatter ref

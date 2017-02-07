@@ -1,4 +1,4 @@
-open Basics
+open Basic
 open Term
 
 let subst_l l n t = Subst.psubst_l (LList.of_list (List.map Lazy.from_val l)) n t

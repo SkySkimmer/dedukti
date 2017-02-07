@@ -1,4 +1,4 @@
-open Basics
+open Basic
 
 module type Monad = sig
   type +'a t

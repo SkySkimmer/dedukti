@@ -20,13 +20,13 @@ let args = [
   ("-r"    , Arg.Set Signature.ignore_redecl,         "Ignore redeclaration" ) ;
   ("-version", Arg.Unit Version.print_version,  "Version" ) ;
   ("-coc", Arg.Set Typing.coc,               "Typecheck the Calculus of Construction" ) ;
-  ("-I"    , Arg.String Basics.add_path,        "Add a directory to load path");
+  ("-I"    , Arg.String Basic.add_path,        "Add a directory to load path");
   ("-errors-in-snf", Arg.Set Errors.errors_in_snf, "Normalize the types in error messages")
 ]
 
 let run_on_file file =
   let input = open_in file in
-    Basics.debug "Processing file '%s'..." file;
+    Basic.debug "Processing file '%s'..." file;
     parse (Lexing.from_channel input) ;
     Errors.success "File '%s' was successfully checked." file;
     close_in input

@@ -1,4 +1,4 @@
-open Basics
+open Basic
 
 (**
 For effect kind Kind (eg State):

@@ -1,4 +1,4 @@
-open Basics
+open Basic
 open Term
 open Rule
 open Monads
@@ -55,7 +55,7 @@ let pseudo_unification sg (q:int) (a:typed term) (b:typed term) : typed SS.t opt
                 | Kind, Kind | Type _, Type _ -> aux sigma lst
                 | DB (_,_,n), DB (_,_,n') when ( n=n' ) -> aux sigma lst
                 | Const (_,md,id), Const (_,md',id') when
-                    ( Basics.ident_eq id id' && Basics.ident_eq md md' ) ->
+                    ( Basic.ident_eq id id' && Basic.ident_eq md md' ) ->
                     aux sigma lst
 
                 | DB (_,x,n), t

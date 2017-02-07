@@ -1,4 +1,4 @@
-open Basics
+open Basic
 open Term
 
 let rec apply_db : type a. (int -> a term -> a term) -> int -> a term -> a term = fun aux q -> function

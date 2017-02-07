@@ -1,4 +1,4 @@
-;; Basics syntax highlighting for Dedukti files in GNU Emacs
+;; Basic syntax highlighting for Dedukti files in GNU Emacs
 ;; Author: Raphaël Cauderlier 
 
 (require 'generic-x)

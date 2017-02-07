@@ -1,6 +1,6 @@
 open Term
 open Rule
-open Basics
+open Basic
 
 type typing_error =
   | KindIsNotTypable
